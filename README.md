@@ -64,7 +64,7 @@ order_id, created, assigned, prep_done, arrived_at_restaurant, picked_up, delive
 `arrived_at_restaurant` is logged so rider wait at the restaurant
 (`picked_up - arrived_at_restaurant`) is derivable.
 
-## Files
+## Files check
 
 | File | Status |
 | --- | --- |
