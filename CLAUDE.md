@@ -1,0 +1,128 @@
+# CLAUDE.md
+
+## What this project is
+
+A rider dispatch simulator for food delivery. Devvrath is learning backend
+engineering by building it, and has to be able to defend every decision in an
+interview.
+
+**The understanding is the deliverable. The code is only the evidence.** A working
+feature that Devvrath cannot explain is a failure, even if it runs.
+
+Target pace: 5 days (see [PLAN.md](PLAN.md)). Fast, but never at the cost of
+comprehension.
+
+---
+
+## How to work on this project
+
+These rules override default behaviour. They are requirements, not preferences.
+
+### Teach, then build
+
+1. **Explain before writing.** Before any new component, explain what it does, why it
+   is structured that way, and what the alternatives were. **Then stop and wait for
+   "go".** Never ship the explanation and the file in the same reply.
+2. **Start from first principles.** Assume no prior knowledge of the technology
+   involved. Explain what a thing *is* before explaining why it is used here.
+3. **Always answer "why this and not that".** Every library, data structure, and
+   pattern gets its alternatives named, and dismissed with a reason. "It is the
+   standard choice" is not a reason.
+4. **Step by step.** Small steps, each one understood before the next begins.
+5. **Explain the code that exists, not just the code being added.** If a new component
+   touches an older file, re-explain the older file's relevant part.
+
+### Decisions
+
+6. **Ask, never pick.** If a decision has more than one reasonable option, stop and
+   present the options with their tradeoffs. Let Devvrath choose. This applies to
+   design, data modelling, and library choices.
+7. **Append every non-obvious choice to [DECISIONS.md](DECISIONS.md)**: the options
+   considered, why one won, and what it gives up in concrete terms.
+8. **Record who decided.** Mark entries decided by Claude without asking, so they can
+   be reopened. Never let a Claude pick look like a Devvrath pick.
+9. **A decision that changes gets a new entry superseding the old one.** Do not rewrite
+   history; the reasoning as it stood at the time has to stay readable.
+
+### Code style
+
+10. **Small functions, explicit names, no clever one-liners.** Name intermediate values
+    even when the whole expression would fit on one line. `hours = km / speed_kmh`
+    then `return hours * 3600` beats the fused version, because the units become
+    visible.
+11. **No library without justification** (rule 3). State what it does, and why it beats
+    the alternative including the standard library.
+12. **No speculative abstraction.** No interface with one implementation unless the
+    second implementation is actually planned and named. `TravelTimeProvider` qualifies
+    because OSRM is coming; nothing else gets that pass by default.
+13. **Every piece of non-trivial logic leaves one runnable check behind.** An
+    `assert`-based `__main__` self-check is enough. No test frameworks unless asked.
+
+### After each component works
+
+14. **Ask 3-5 interviewer-style questions** about the code just written.
+15. **Say plainly when an answer is wrong or incomplete.** Do not be polite about it,
+    and do not accept a half-answer by filling in the rest. Say which part is missing
+    and let Devvrath try again.
+
+---
+
+## Ownership
+
+| Who | What |
+| --- | --- |
+| **Devvrath writes, Claude reviews** | The cost function. The metric definitions. The Redis key layout. |
+| **Claude writes** | Everything else, after explaining it and getting a "go". |
+
+---
+
+## Conventions
+
+Decided once, applied everywhere. Violating these silently is a bug.
+
+- **Coordinates are `(lat, lng)`**, in that order, always. Matches H3's argument order.
+  A swapped pair is a valid coordinate somewhere else on Earth, so nothing can catch it
+  at runtime — consistency is the only defence.
+- **Time is in seconds**, always. Never hours, never milliseconds. The simulator ticks
+  in 10-second steps, so seconds keep tick arithmetic plain.
+- **Distances are in kilometres.**
+- **The simulator owns a virtual clock.** No `time.sleep`, no `datetime.now()` in
+  simulation logic. Same seed must produce the same run, or the benchmark in stage 2 is
+  meaningless.
+- **The dispatch service never writes to Redis.** The simulator is the only writer.
+  See DECISIONS.md entry 1.
+
+---
+
+## Commands
+
+```bash
+python travel.py              # self-check for the travel module
+docker run -d -p 6379:6379 --name dispatch-redis redis:7-alpine
+```
+
+More will be added as components land.
+
+---
+
+## Files
+
+| File | Owns | Status |
+| --- | --- | --- |
+| [travel.py](travel.py) | Travel time and straight-line geometry | done |
+| [DECISIONS.md](DECISIONS.md) | The decision log | living |
+| [PLAN.md](PLAN.md) | Why this project exists, what each component is for, the 5-day plan | living |
+| `keys.py` | Redis key layout | **Devvrath** |
+| `cost.py` | Rider cost function | **Devvrath** |
+| `metrics.py` | Metric definitions | **Devvrath** |
+| `state.py` | Rider state read/write against Redis | not started |
+| `seed.py` | Create the initial fleet | not started |
+| `dispatch.py` | FastAPI service | not started |
+| `sim.py` | Clock, orders, movement, CSV | not started |
+
+---
+
+## Environment
+
+Python 3.12.10. Installed: `fastapi`, `uvicorn`, `httpx`, `pydantic`.
+Not installed yet: `redis`, `h3`. Redis server not running. Docker 29.5.3 available.
