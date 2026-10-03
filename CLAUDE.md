@@ -91,6 +91,9 @@ Decided once, applied everywhere. Violating these silently is a bug.
   meaningless.
 - **The dispatch service never writes to Redis.** The simulator is the only writer.
   See DECISIONS.md entry 1.
+- **Redis is on host port 6380**, not the default 6379. Port 6379 belongs to a
+  different project of Devvrath's (`facultyhire-redis-1`). Any code or command that
+  defaults to 6379 is pointing at the wrong database. See DECISIONS.md entry 10.
 
 ---
 
@@ -98,7 +101,12 @@ Decided once, applied everywhere. Violating these silently is a bug.
 
 ```bash
 python travel.py              # self-check for the travel module
-docker run -d -p 6379:6379 --name dispatch-redis redis:7-alpine
+
+docker start dispatch-redis   # Redis on host port 6380
+docker stop dispatch-redis
+
+# first time only, already done:
+docker run -d -p 6380:6379 --name dispatch-redis redis:7-alpine
 ```
 
 More will be added as components land.
@@ -124,5 +132,12 @@ More will be added as components land.
 
 ## Environment
 
-Python 3.12.10. Installed: `fastapi`, `uvicorn`, `httpx`, `pydantic`.
-Not installed yet: `redis`, `h3`. Redis server not running. Docker 29.5.3 available.
+Python 3.12.10. Docker 29.5.3.
+
+Installed: `fastapi` 0.139.0, `uvicorn` 0.51.0, `httpx` 0.28.1, `pydantic` 2.13.4,
+`redis` 8.1.0, `h3` 4.5.0.
+
+Redis runs as the `dispatch-redis` container (`redis:7-alpine`) on **host port 6380**.
+
+**h3 is version 4.x**, which renamed the whole API from 3.x. Tutorials written for 3.x
+will not work: `geo_to_h3` is now `latlng_to_cell`, and `k_ring` is now `grid_disk`.

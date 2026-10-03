@@ -15,10 +15,24 @@ class TravelTimeProvider(Protocol):
 
 
 def haversine_km(a: Point, b: Point) -> float:
+    """Great-circle distance in km between two (lat, lng) points.
+
+    Trig functions take radians, so every angle is converted first. Feeding
+    degrees in is silent and catastrophic: sin(90) is 0.894, not 1."""
     lat1, lng1 = radians(a[0]), radians(a[1])
     lat2, lng2 = radians(b[0]), radians(b[1])
-    h = sin((lat2 - lat1) / 2) ** 2 + cos(lat1) * cos(lat2) * sin((lng2 - lng1) / 2) ** 2
-    return 2 * EARTH_KM * asin(sqrt(h))
+    delta_lat = lat2 - lat1
+    delta_lng = lng2 - lng1
+
+    # Latitude degrees are the same length everywhere, so no scaling.
+    north_south = sin(delta_lat / 2) ** 2
+    # Longitude degrees shrink toward the poles. cos(lat) is that correction:
+    # 1 degree of longitude is 111 km at the equator and 0 km at the pole.
+    east_west = cos(lat1) * cos(lat2) * sin(delta_lng / 2) ** 2
+
+    # Angle between the two points as seen from the centre of the Earth.
+    central_angle = 2 * asin(sqrt(north_south + east_west))
+    return EARTH_KM * central_angle
 
 
 class HaversineProvider:

@@ -274,3 +274,83 @@ Not yet decided. Listed here so they do not get decided by accident.
 | Where shared constants live | Rider speed is needed by both processes: the sim to move riders, the service to estimate. Options are duplicating the constant, a shared `config.py`, or environment variables. Duplicating means the two processes can silently disagree about how fast a rider is. |
 | Rider state machine | How many states, and are they a field on the hash or separate sets? `free` / `to_restaurant` / `waiting` / `to_customer` is the minimum the two-leg model implies. A set of free rider ids would make the dispatch filter an intersection instead of N hash reads. |
 | Metric definitions | Owner: Devvrath. Which numbers define a good run, computed from the CSV. Needed before stage 1 of the roadmap, since an eval harness with no agreed metric cannot declare a winner. |
+
+---
+
+## 9. Adding `redis-py` and `h3`
+
+**Date:** 2026-10-03 - **Decided by:** Devvrath, after the case for each
+
+**`redis` (redis-py 8.1.0)** - the official Python client for Redis. Opens a TCP
+connection, speaks Redis's RESP wire protocol, and exposes one Python method per Redis
+command (`r.hset`, `r.sunion`, `r.smembers`).
+
+| Alternative | Why not |
+| --- | --- |
+| Hand-roll RESP over a raw socket | RESP is a simple protocol, so this is *possible*. But it is a project in itself: framing, type parsing, connection pooling, reconnection, pipelining. All of it plumbing, none of it dispatch. |
+| `aioredis` | Merged into redis-py as its async interface, so it is no longer a separate choice. The sync client is correct here because the simulator is deliberately single-threaded. |
+
+**`h3` (4.5.0)** - Python bindings for Uber's hexagonal geospatial index. We use two
+functions: `latlng_to_cell` and `grid_disk`.
+
+| Alternative | Why not |
+| --- | --- |
+| Redis `GEOADD`/`GEOSEARCH` | Genuinely simpler, and would work. Rejected for learning value, and because H3 cells double as an aggregation unit for demand and supply maps later. Logged in PLAN.md as an honest tradeoff, not a dismissal. |
+| S2 (Google) | Comparable quality, squares on a projected cube. H3's uniform hexagon adjacency is the better fit for radius-style search, and its Python API is simpler. |
+| Write our own grid | Reinventing H3 badly, and spending the project on geometry instead of dispatch. |
+
+**Version note:** h3 4.x renamed the entire 3.x API. Anything written for h3 3.x
+(`geo_to_h3`, `k_ring`) will not run. Recorded because it will cost an hour otherwise.
+
+---
+
+## 10. Redis runs on host port 6380, in its own container
+
+**Date:** 2026-10-03 - **Decided by:** Devvrath
+
+**How this surfaced:** the first `docker run` failed silently in a dangerous way. Port
+6379 was already bound by `facultyhire-redis-1`, a container from an unrelated project,
+so our container was created but never started. A connection test to 6379 answered
+`PONG` anyway - from the *other project's* Redis. Had this gone unnoticed, rider state
+would have been written into a different project's database, and the first symptom would
+have been confusing data rather than an error.
+
+**Options considered**
+
+| Option | Tradeoff |
+| --- | --- |
+| **Own container on host port 6380** (chosen) | `-p 6380:6379`. Separate process, separate memory, separate lifecycle. The other project is never touched. Cost: every connection in this repo must say 6380, and anything defaulting to 6379 is silently wrong. |
+| Share the existing Redis, use database 1 | Redis has 16 numbered databases, so keys would never collide. No new container. But `FLUSHALL` from either project wipes both, and stopping the facultyhire stack would take this project's state with it. Couples two unrelated projects' lifecycles. |
+| Stop the other Redis and take 6379 | Default port, so every tutorial command works unmodified. Breaks the other project until swapped back, and relies on remembering to swap. |
+
+**Why:** isolation is worth one non-default port. The failure mode of the shared option
+is data loss caused by work on an unrelated project, which is the kind of coupling that
+is invisible until it bites.
+
+**The general lesson:** a successful connection is not proof you reached *your* service.
+Port conflicts produce a working connection to the wrong thing. Verifying that a fresh
+database is actually empty is what caught this.
+
+**Revisit when:** the project moves to a compose file, where a named service and an
+internal network make the host port mostly irrelevant.
+
+---
+
+## 11. Roadmap stage 3 moves to days 6-7 rather than compressing day 5
+
+**Date:** 2026-10-03 - **Decided by:** Devvrath
+
+**Options considered**
+
+| Option | Tradeoff |
+| --- | --- |
+| **Days 6-7, nothing rushed** (chosen) | Days 1-5 stay as planned. k6 load testing and OpenTelemetry tracing get their own block. Costs 1-2 days beyond the original 5. |
+| Trim to tracing only, share day 5 | OpenTelemetry on the service, no k6. Fits inside 5 days but makes day 5 long, and drops load testing entirely. |
+| Drop stage 2, promote stage 3 | Day 5 becomes load testing and tracing, batched matching is cut. Rejected: the greedy-versus-matching benchmark is the strongest result in the project, and tracing infrastructure with nothing interesting to observe is a weaker outcome. |
+
+**Why:** the deadline is self-imposed, and the purpose of the project is understanding
+rather than delivery. Compressing two unfamiliar technologies into the same day as a
+benchmark would produce three things half-learned instead of three things learned.
+
+**Revisit when:** the 5 days are up and the actual pace is known, which is better
+evidence than this estimate.

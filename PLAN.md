@@ -461,13 +461,14 @@ The interface is ready for it; the implementation is a later project.
 
 Carried over from DECISIONS.md so they are in one place:
 
-| # | Decision | Owner |
-| --- | --- | --- |
-| 1 | Confirm or reopen entry 5 — provider takes one origin and N destinations | You |
-| 2 | Confirm or reopen entry 6 — `Protocol` rather than `abc.ABC` | You |
-| 3 | Rewrite `haversine_km` with named intermediate variables, per the no-one-liners rule | You (I recommend yes) |
-| 4 | The Redis key layout | You, I review |
-| 5 | The rider state machine — how many states, and where stored | You, after my Day 1 explanation |
-| 6 | Where shared constants live — duplicated, a `config.py`, or environment variables | You, after my Day 1 explanation |
-| 7 | Which of the three stage-3 options above | You |
-| 8 | Add `redis` and `h3` — I will justify both before installing | You approve |
+| # | Decision | Owner | Status |
+| --- | --- | --- | --- |
+| 1 | Confirm or reopen entry 5 — provider takes one origin and N destinations | You | **open** |
+| 2 | Confirm or reopen entry 6 — `Protocol` rather than `abc.ABC` | You | **open** |
+| 3 | Rewrite `haversine_km` with named intermediate variables | You | done |
+| 4 | The Redis key layout | You, I review | **open, blocks Day 1** |
+| 5 | The rider state machine — how many states, and where stored | You, after my Day 1 explanation | **open, blocks Day 1** |
+| 6 | Where shared constants live — duplicated, a `config.py`, or environment variables | You, after my Day 1 explanation | **open, blocks Day 1** |
+| 7 | Which of the three stage-3 options above | You | done — days 6-7, entry 11 |
+| 8 | Add `redis` and `h3` | You approve | done — entry 9 |
+| 9 | Which Redis instance this project uses | You | done — port 6380, entry 10 |
