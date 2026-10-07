@@ -510,3 +510,106 @@ invisible in git history.
 **Revisit when:** the two processes are deployed separately, at which point Group 1
 values also need a shared source that is not a local file - a config service, or baking
 them into a shared artifact.
+
+---
+
+## 15. The Redis key layout and the rider hash schema
+
+**Date:** 2026-10-07 - **Decided by:** Devvrath, except where noted
+
+### The shape
+
+```
+dispatch:rider:<id>                  (hash)
+    lat          float
+    lng          float
+    state        free | to_restaurant | waiting_at_restaurant | to_customer
+    target_lat   float   - absent when free
+    target_lng   float   - absent when free
+    order_id     string  - absent when free
+
+dispatch:cell:<h3 cell id>           (set of bare rider ids)
+```
+
+### The choices behind it
+
+**A project prefix (`dispatch:`).** Costs a few bytes on every key. Buys the ability to
+find or wipe exactly this project's keys, and makes the database legible to someone who
+did not write it. Chosen partly because entry 10 already demonstrated the cost of
+assuming an instance is yours alone.
+
+**Cell sets hold bare rider ids, not full hash keys.** Full keys would let `SUNION`
+output feed straight into `HMGET`, skipping one lookup. Rejected for two reasons: it
+bakes the key format - including the prefix - into the stored data, so renaming a key
+would require rewriting every set; and the dispatch endpoint returns a rider *id*, so
+storing keys would mean converting to keys and then back again. The key is only needed
+in the middle of the operation. Store the identity, derive the key.
+
+**The rider's H3 cell is derived, not stored.** To move a rider between cell sets the
+writer needs the old cell. Deriving it is `latlng_to_cell(old_lat, old_lng, resolution)`
+- one pure function call on data the writer is already holding, because entry 12 means
+the simulator reads the old position every tick anyway. Storing it as a field would be
+one more thing that can drift from `lat`/`lng`. Note that **entry 12 changed the
+economics of this choice**: had the simulator owned state in memory, the old cell would
+have been in hand already and the trade would look different.
+
+**No key listing all riders.** Nothing in the dispatch path needs it. Seeding generates
+the ids, fleet size lives in `config.py`, and teardown or inspection can use `SCAN`. It
+was considered only because it felt tidy, which is not a use case - unused structure
+invites someone later to assume it is maintained.
+
+**`keys.py` owns key names; `state.py` owns field names.** `keys.py` is about addressing
+(where data lives), `state.py` about contents (what is in it and what type it is).
+Knowing a field is called `lat` is inseparable from knowing it is a float, and entry 6's
+string-coercion trap puts type knowledge in `state.py`. Splitting them would force two
+files to agree about one thing.
+
+**`rider_id` is not a field.** The id is already the key. Storing it again is the same
+duplication rejected above.
+
+### Availability, deliberately not built
+
+Devvrath identified a distinction that had not been raised: **what a rider is doing** is
+not the same as **whether a rider wants work**. A rider can be `free` - on no delivery -
+and still not be a candidate, because they went off shift. Production systems model both
+dimensions; an Uber driver is offline, or online-waiting, or online-on-trip.
+
+Not implemented, because no rider in this simulation ever goes off shift. The field
+would be `true` for every rider for the whole run, and a field that never varies cannot
+be tested and cannot be wrong. The insight is recorded here; the field arrives the day
+shifts are modelled.
+
+### Destination and order id live on the hash
+
+**Decided by:** Claude, at Devvrath's request. Open to reopening.
+
+| Option | Tradeoff |
+| --- | --- |
+| **`target_lat`, `target_lng`, `order_id` on the rider hash** (chosen) | The mover reads one hash and has everything. Keeps entry 12 coherent: a rider in Redis is a *complete* rider. Lets one `HGETALL` answer "what is this rider doing and where is it going", which matters when the movement loop misbehaves. |
+| Keep them in simulator memory | Less data in Redis. But a rider's state is then split - position in Redis, destination in Python - so neither place holds a whole rider. That is precisely the problem entry 12 was chosen to avoid, reintroduced indirectly. |
+| Both | Rejected first. Duplication feels like insurance but adds a *new* failure mode: the two copies can disagree, with nothing to say which is right. Same shape as the `riders:free` set rejected in entry 13 and the stored cell rejected above. |
+
+**The cost assumption that turned out to be wrong:** more fields looked like more traffic
+on the hot path. It is not - the destination only changes on a **state transition**
+(assignment, pickup), four writes per order, while the per-tick write still touches only
+`lat` and `lng`. And since entry 12 means the rider is read every tick regardless, three
+extra fields ride along in the same `HMGET` - the same single round trip, a few more
+bytes. Second time in one session that a guess did not survive measurement.
+
+**A nuance worth keeping:** `order_id` is a *pointer*. The order itself, with all its
+timestamps, lives in simulator memory and then the CSV. That is not duplication - Redis
+holds the link, the simulator holds the order, and the dispatch service never needs the
+order at all. Order timestamps are deliberately absent from Redis for the same reason.
+
+**And a clarification that is easy to get wrong:** reading a rider from Redis into a
+local variable is *not* keeping two copies. That is ordinary data flow. The problem is
+only a copy that **persists across ticks** and starts being treated as authoritative.
+
+**One consequence to implement:** on the transition back to `free`, the three fields must
+be `HDEL`ed, not left in place. Otherwise a free rider carries a stale destination and a
+completed order id, and the first code path that reads `target_lat` without checking
+`state` sends a rider to an address it already visited. `state.py` treats absent as "no
+destination".
+
+**Revisit when:** something other than the simulator needs to know a rider's
+destination, which would make the split-state option strictly worse than it already is.
