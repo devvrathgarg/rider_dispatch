@@ -76,8 +76,18 @@ These rules override default behaviour. They are requirements, not preferences.
 
 | Who | What |
 | --- | --- |
-| **Devvrath writes, Claude reviews** | The cost function. The metric definitions. The Redis key layout. |
-| **Claude writes** | Everything else, after explaining it and getting a "go". |
+| **Claude writes** | Everything, after explaining it and getting a "go". |
+| **Devvrath reviews, and must be able to defend every line** | All of it. |
+
+**Changed 2026-10-07.** Originally Devvrath wrote the cost function, the metric
+definitions and the key layout. That was dropped for time: the interview tests
+explanation, not typing.
+
+**The obligation this transfers to Claude:** explaining code you did not write is harder,
+because you lack the memory of *choosing*. So for every file, Claude must supply the
+**defence** — the sentence Devvrath would say when asked "why is it like that?" — not
+just a description of what the code does. A walkthrough that explains *what* without
+*why* has not met this rule.
 
 ---
 
@@ -106,6 +116,7 @@ Decided once, applied everywhere. Violating these silently is a bug.
 
 ```bash
 python travel.py              # self-check for the travel module
+python keys.py                # self-check for the key layout
 
 docker start dispatch-redis   # Redis on host port 6380
 docker stop dispatch-redis
@@ -125,9 +136,9 @@ More will be added as components land.
 | [travel.py](travel.py) | Travel time and straight-line geometry | done |
 | [DECISIONS.md](DECISIONS.md) | The decision log | living |
 | [PLAN.md](PLAN.md) | Why this project exists, what each component is for, the 5-day plan | living |
-| `keys.py` | Redis key layout | **Devvrath** |
-| `cost.py` | Rider cost function | **Devvrath** |
-| `metrics.py` | Metric definitions | **Devvrath** |
+| [keys.py](keys.py) | Redis key layout | done |
+| `cost.py` | Rider cost function | not started |
+| `metrics.py` | Metric definitions | not started |
 | `state.py` | Rider state read/write against Redis | not started |
 | `seed.py` | Create the initial fleet | not started |
 | `dispatch.py` | FastAPI service | not started |
