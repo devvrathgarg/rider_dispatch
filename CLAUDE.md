@@ -117,6 +117,7 @@ Decided once, applied everywhere. Violating these silently is a bug.
 ```bash
 python travel.py              # self-check for the travel module
 python keys.py                # self-check for the key layout
+python state.py               # self-check for rider state (needs Redis up)
 
 docker start dispatch-redis   # Redis on host port 6380
 docker stop dispatch-redis
@@ -137,9 +138,10 @@ More will be added as components land.
 | [DECISIONS.md](DECISIONS.md) | The decision log | living |
 | [PLAN.md](PLAN.md) | Why this project exists, what each component is for, the 5-day plan | living |
 | [keys.py](keys.py) | Redis key layout | done |
+| [config.py](config.py) | Shared settings for both processes | done |
 | `cost.py` | Rider cost function | not started |
 | `metrics.py` | Metric definitions | not started |
-| `state.py` | Rider state read/write against Redis | not started |
+| [state.py](state.py) | Rider state read/write against Redis, and the cell index | done |
 | `seed.py` | Create the initial fleet | not started |
 | `dispatch.py` | FastAPI service | not started |
 | `sim.py` | Clock, orders, movement, CSV | not started |

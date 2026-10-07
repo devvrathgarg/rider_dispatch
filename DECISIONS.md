@@ -65,11 +65,21 @@ ring returns a rider that is merely close enough, while reporting itself as near
 Fixing `K` and ranking every candidate in the whole disk sidesteps this: the search area
 is decided once, and within it the ranking is honest.
 
-**Sizing note:** at resolution 8 the average cell edge is about 0.46 km and
-centre-to-centre spacing about 0.8 km, so a `k=2` disk is 19 cells reaching roughly
-1.6 km centre-to-centre and about 2 km at the outer boundary. These are averages over an
-unequal-area grid, so the real reach should be measured in the sim, not taken from this
-file.
+**Sizing note**, measured with h3 4.5.0 rather than quoted from a doc table:
+
+| | |
+| --- | --- |
+| Average edge length at res 8 | 0.531 km |
+| Average cell area | 0.737 km2 |
+| Centre-to-centre spacing | 0.920 km |
+| `grid_disk(cell, 2)` | 19 cells |
+| Reach, centre to outer centre | 1.84 km |
+| Reach, outer boundary | 2.37 km |
+
+So `k=2` covers roughly a 2.4 km radius. These are averages over a grid whose cells are
+not equal in area, so the real reach still wants measuring in the sim. An earlier version
+of this entry said 0.46 km edge and about 2 km reach, from memory rather than from the
+library; the numbers above were run.
 
 **What this gives up, precisely**
 

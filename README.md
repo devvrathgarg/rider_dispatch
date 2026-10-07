@@ -27,7 +27,7 @@ Locked, with the reasoning, so they can be revisited on purpose rather than by d
 - **Service reads, simulator writes.** No atomic claim in the service. Correct only
   under a single writer — see above.
 - **Fixed k-ring candidate search.** `grid_disk(cell, K)` once, `K` configurable
-  (default 2, roughly 1.5 km at res 8). If no free rider is in range the order goes
+  (default 2, about 2.4 km at res 8). If no free rider is in range the order goes
   unassigned and retries on a later tick. Expanding rings were rejected: the first
   ring containing *a* rider is not necessarily the ring containing the *nearest* one.
 - **Riders interpolate every tick.** Each tick a moving rider advances along the

@@ -22,6 +22,16 @@ def cell_key(cell_id: str) -> str:
     return f"{PREFIX}:cell:{cell_id}"
 
 
+def all_keys_pattern() -> str:
+    """Matches every key this project owns.
+
+    For SCAN only. Never pass this to KEYS: KEYS walks the entire keyspace and
+    blocks Redis's single command thread for the whole scan, which is invisible
+    on 500 keys and an outage on 5 million.
+    """
+    return f"{PREFIX}:*"
+
+
 if __name__ == "__main__":
     assert rider_key("r7") == "dispatch:rider:r7"
     assert cell_key("8928308280fffff") == "dispatch:cell:8928308280fffff"
@@ -32,5 +42,10 @@ if __name__ == "__main__":
     # Every key starts with the prefix, so one SCAN pattern can find them all.
     assert rider_key("r7").startswith(PREFIX + ":")
     assert cell_key("abc").startswith(PREFIX + ":")
+
+    # The pattern must match both families and nothing outside the project.
+    assert all_keys_pattern() == "dispatch:*"
+    assert rider_key("r7").startswith(all_keys_pattern()[:-1])
+    assert cell_key("abc").startswith(all_keys_pattern()[:-1])
 
     print("ok")

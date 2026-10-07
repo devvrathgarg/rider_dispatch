@@ -254,7 +254,7 @@ one city, but knowing it demonstrates you understand the structure rather than j
 API.
 
 **Why resolution 8.** H3 resolutions run 0 (continent-sized) to 15 (under a square
-metre). Resolution 8 cells average ~0.46 km edge and ~0.74 km² area — roughly a few city
+metre). Resolution 8 cells average ~0.53 km edge and ~0.74 km² area — roughly a few city
 blocks. The tradeoff:
 
 - **Finer** (res 9, 10): more precise filtering, fewer irrelevant candidates — but more
@@ -262,7 +262,7 @@ blocks. The tradeoff:
 - **Coarser** (res 7, 6): fewer cells to query and less churn — but each cell returns
   more riders who turn out to be too far, so the ranking step does more wasted work.
 
-Resolution 8 at `k=2` gives 19 cells reaching roughly 1.6-2 km, which is a sensible
+Resolution 8 at `k=2` gives 19 cells reaching about 2.4 km, which is a sensible
 delivery radius. Both numbers are tunable and worth measuring rather than trusting.
 
 ## Why a virtual clock instead of real time
