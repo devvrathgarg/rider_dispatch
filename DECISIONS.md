@@ -396,3 +396,74 @@ and every read costs a string-to-float conversion. Two consequences follow:
 rather than assumed. The upgrade path is to keep an in-memory write-through cache in the
 simulator while leaving Redis authoritative, which is a smaller change than swapping the
 ownership model outright.
+
+---
+
+## 13. Four rider states, stored as one `status` field on the rider hash
+
+**Date:** 2026-10-07 - **Decided by:** Devvrath
+
+### Part one: four states, not three
+
+```
+free  ->  to_restaurant  ->  waiting_at_restaurant  ->  to_customer  ->  free
+```
+
+| Transition | Trigger |
+| --- | --- |
+| `free` -> `to_restaurant` | Dispatch assigns the order |
+| `to_restaurant` -> `waiting_at_restaurant` | Rider reaches the restaurant |
+| `waiting_at_restaurant` -> `to_customer` | Simulated clock reaches `prep_done` |
+| `to_customer` -> `free` | Rider reaches the customer |
+
+Only `free` riders are dispatch candidates. Only `to_restaurant` and `to_customer`
+riders are moved by the mover.
+
+**The option rejected** was dropping `waiting_at_restaurant` and inferring "at the
+restaurant" by comparing the rider's position against the target each tick. With the
+explicit state, the mover is a lookup on one field. Without it, the mover must redo
+geometry every tick to rediscover an arrival that was already known at the moment it
+happened. One extra state removes guessing from the hot path.
+
+### Part two: the status field, not a denormalised free-set
+
+**Options considered**
+
+| Option | Tradeoff |
+| --- | --- |
+| **`status` field on the rider hash** (chosen) | The state lives in exactly one place, so the system cannot disagree with itself. Dispatch fetches all candidates in one pipeline and filters in Python. Measured at 2.643 ms per query. |
+| `status` field plus a `riders:free` set | `SINTER` filters server-side, so only free riders are fetched. Measured at 1.881 ms per query - genuinely ~30% faster. But the same fact lives twice, and every transition must update both. One missed update leaves a rider in `riders:free` whose hash says `to_customer`, and dispatch hands that rider a second order. |
+| Sets only, membership defines state | No duplication. But "what is rider 7 doing?" requires checking up to four sets, and `HGETALL rider:7` no longer reveals the rider's state, which makes debugging much harder. |
+
+**The measurement, and what it did not settle**
+
+Measured over 300 runs with 20 candidates, 4 of them free:
+
+```
+fetch all 20, filter in Python : 2.643 ms
+SINTER first, fetch only 4     : 1.881 ms
+difference                     : 0.762 ms  (1.52 s over a 2000-order run)
+```
+
+Worth recording that this **contradicted the expectation**. The prediction was that
+pipelining would make the two approaches roughly equal, since both are one round trip
+for the fetch. It did not - server-side filtering still wins by about 30%.
+
+**Why the slower option was chosen anyway**
+
+1. **The win is in the wrong currency.** 1.5 seconds of offline simulation time is
+   traded for a permanent obligation to keep two copies of one fact in sync, forever,
+   across every code path.
+2. **The failure mode is silent and distant.** A drifted free-set does not crash. It
+   produces a rider holding two orders, surfacing later as a strange CSV row. A bug that
+   lies is worth far more than 1.5 seconds.
+3. **It is addable later, not removable later.** `status` on the hash stays
+   authoritative in both designs, so the free-set is a pure optimisation that can be
+   added once a measurement demands it, with evidence rather than a guess.
+
+**The distinction that decides it:** these dispatch calls are not on a customer's
+critical path - they are part of a batch simulation. In a production service with a p99
+latency budget, 0.76 ms on every call is real and could well justify the free-set.
+
+**Revisit when:** dispatch latency per call starts to matter, which means either the
+candidate pool grows well beyond 20 or the service is put in front of real traffic.
