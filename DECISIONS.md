@@ -467,3 +467,46 @@ latency budget, 0.76 ms on every call is real and could well justify the free-se
 
 **Revisit when:** dispatch latency per call starts to matter, which means either the
 candidate pool grows well beyond 20 or the service is put in front of real traffic.
+
+---
+
+## 14. One `config.py`, reading environment variables with defaults
+
+**Date:** 2026-10-07 - **Decided by:** Devvrath
+
+**The failure being prevented:** both processes need the rider speed. If `sim.py` moves
+riders at 25 km/h while `dispatch.py` estimates at 20 km/h, everything still runs and
+nothing errors - but dispatch ranks riders using a wrong model of the world, and the
+Day 5 greedy-versus-matching benchmark compares against a baseline that was broken the
+whole time. A bug with no symptom that silently invalidates the results.
+
+### The distinction that decides it
+
+Shared values are two different kinds of thing, and conflating them is the actual
+mistake:
+
+| Group | What it is | Where it belongs | Values |
+| --- | --- | --- | --- |
+| **1. The experiment** | Facts about the world being simulated. Changing one changes what is being measured, so the change should be visible in git. | **In code** | rider speed, H3 resolution, `K`, tick length, prep time |
+| **2. The machine** | Facts about where the code happens to be running. Nothing to do with dispatch. | **Outside code** | Redis host and port, service URL |
+
+**Options considered**
+
+| Option | Tradeoff |
+| --- | --- |
+| Plain `config.py` of constants | Simplest, one file, real Python types. But changing the Redis port means editing code, which treats Group 2 as though it were Group 1. |
+| `os.getenv` wherever each value is needed | Fully configurable from outside. Two real problems: every value arrives as a **string** (the same trap as entry 6's string coercion - `os.getenv("H3_RESOLUTION")` is `'8'`, not `8`), and scattered `getenv` calls mean scattered defaults, which is the duplication the decision was meant to eliminate. |
+| **`config.py` reading env vars with defaults** (chosen) | One import site for both processes. Group 1 stays plainly in code. Group 2 is overridable without editing anything. The string-to-int conversion happens in exactly one place, which is the same principle that justifies `state.py`. Costs about five lines over the plain version. |
+
+**Why:** it is the only option that respects the Group 1 / Group 2 split. The phrasing
+worth keeping: *settings that describe the experiment live in code so changes show up in
+git; settings that describe the machine come from the environment.*
+
+**What this gives up:** a little ceremony, and the discipline of remembering which group
+a new constant belongs to when adding one. Getting that wrong is the likely future
+mistake - putting rider speed behind an env var would make an experiment's parameters
+invisible in git history.
+
+**Revisit when:** the two processes are deployed separately, at which point Group 1
+values also need a shared source that is not a local file - a config service, or baking
+them into a shared artifact.
