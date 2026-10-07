@@ -1,6 +1,6 @@
 """Travel time + straight-line geometry. HaversineProvider now, OSRM later."""
 
-from math import radians, sin, cos, asin, sqrt
+from math import asin, cos, pi, radians, sin, sqrt
 from typing import Protocol
 
 Point = tuple[float, float]  # (lat, lng)
@@ -43,6 +43,20 @@ class HaversineProvider:
         return [haversine_km(origin, d) / self.speed_kmh * 3600 for d in destinations]
 
 
+def km_to_degrees(km: float, at_lat: float) -> tuple[float, float]:
+    """How many degrees of latitude and of longitude span `km` at this latitude.
+
+    They are not the same number. Latitude degrees are the same length
+    everywhere; longitude degrees shrink toward the poles by cos(lat) - the very
+    correction haversine_km applies in its east-west term. At Bangalore's 13N
+    that is about a 2.5% difference, so a square box in km is not a square box
+    in degrees.
+    """
+    km_per_degree_lat = EARTH_KM * pi / 180
+    km_per_degree_lng = km_per_degree_lat * cos(radians(at_lat))
+    return (km / km_per_degree_lat, km / km_per_degree_lng)
+
+
 def step_toward(a: Point, b: Point, km: float) -> Point:
     """Move from a toward b by km, clamped at b. Linear lat/lng interpolation,
     which is wrong near the poles and fine at city scale."""
@@ -63,6 +77,17 @@ if __name__ == "__main__":
     assert abs(t - 111.19 / 25 * 3600) < 10  # ~4.4 hours at 25 km/h
     assert p.travel_times((0, 0), []) == []
     assert len(p.travel_times((0, 0), [(0, 1), (1, 0), (0, 0)])) == 3
+
+    # At the equator a degree of longitude and of latitude are the same length.
+    equator_lat, equator_lng = km_to_degrees(111.195, 0.0)
+    assert abs(equator_lat - 1.0) < 0.001
+    assert abs(equator_lng - 1.0) < 0.001
+
+    # Away from it, the same distance spans MORE longitude than latitude.
+    blr_lat, blr_lng = km_to_degrees(8.0, 12.9716)
+    assert blr_lng > blr_lat
+    assert abs(blr_lat - 0.0719) < 0.0005
+    assert abs(blr_lng - 0.0738) < 0.0005
 
     assert step_toward((0, 0), (0, 1), 1000) == (0, 1)  # overshoot clamps
     assert step_toward((0, 0), (0, 0), 5) == (0, 0)  # zero-length no divide-by-0

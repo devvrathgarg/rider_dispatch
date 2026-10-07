@@ -118,6 +118,7 @@ Decided once, applied everywhere. Violating these silently is a bug.
 python travel.py              # self-check for the travel module
 python keys.py                # self-check for the key layout
 python state.py               # self-check for rider state (needs Redis up)
+python seed.py                # wipe and recreate the fleet (needs Redis up)
 
 docker start dispatch-redis   # Redis on host port 6380
 docker stop dispatch-redis
@@ -142,7 +143,7 @@ More will be added as components land.
 | `cost.py` | Rider cost function | not started |
 | `metrics.py` | Metric definitions | not started |
 | [state.py](state.py) | Rider state read/write against Redis, and the cell index | done |
-| `seed.py` | Create the initial fleet | not started |
+| [seed.py](seed.py) | Create the initial fleet, and report what the index looks like | done |
 | `dispatch.py` | FastAPI service | not started |
 | `sim.py` | Clock, orders, movement, CSV | not started |
 
