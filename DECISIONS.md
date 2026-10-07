@@ -354,3 +354,45 @@ benchmark would produce three things half-learned instead of three things learne
 
 **Revisit when:** the 5 days are up and the actual pace is known, which is better
 evidence than this estimate.
+
+---
+
+## 12. Redis is the single source of truth; the simulator keeps no authoritative fleet in memory
+
+**Date:** 2026-10-07 - **Decided by:** Devvrath
+
+**Options considered**
+
+| Option | Tradeoff |
+| --- | --- |
+| **Redis is the truth** (chosen) | The simulator holds no authoritative copy. To move a rider it reads the position from Redis, computes the next one, and writes it back. Exactly one record exists, so nothing can disagree with itself. Costs a read *and* a write on the hottest operation in the system, plus a text-to-float conversion on every read. |
+| Simulator owns the fleet in memory, writes through to Redis | Movement becomes plain Python arithmetic on real objects: no read, no conversion on the hot path, half the Redis traffic, simpler simulator code. But two copies of every rider exist, and a failed write makes them drift apart silently, leaving the service to decide from a stale world. |
+
+**Why**
+
+In production no single process can hold the fleet in memory, because GPS pings arrive
+at many servers and any of them may handle the next one. Redis has to be the
+authoritative shared view. Writing the simulator to read back from Redis keeps the data
+flow the same shape as the real system, rather than taking a shortcut that only works
+because a simulator happens to be one process.
+
+**A precision worth keeping:** in production Redis is *also* a copy. A rider's position
+really originates on their phone; Redis holds the most recent ping anyone was told
+about. That is exactly why its lack of durability is acceptable there - wipe Redis and
+the next round of pings refills it in seconds, because Redis was never the origin of
+the fact. "Source of truth" here means authoritative *shared view*, not origin.
+
+**What this gives up, precisely**
+
+Every tick, every moving rider now costs a read plus a write instead of a write alone,
+and every read costs a string-to-float conversion. Two consequences follow:
+
+- `state.py` carries more weight, since it is the single place those conversions happen.
+- Pipelining (DECISIONS context: the N+1 problem) now matters on the *simulator* side
+  too, not only in the dispatch service. A per-tick loop of individual reads would be
+  the same N+1 mistake, just in a different process.
+
+**Revisit when:** per-tick Redis traffic becomes the simulator's bottleneck, measured
+rather than assumed. The upgrade path is to keep an in-memory write-through cache in the
+simulator while leaving Redis authoritative, which is a smaller change than swapping the
+ownership model outright.
