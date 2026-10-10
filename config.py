@@ -24,15 +24,19 @@ import os
 H3_RESOLUTION = 8
 
 # The simulated city: a square box this many km on a side, centred here.
-# Converted to degrees by travel.km_to_degrees, because 8 km is a different
-# number of degrees east-west than north-south at this latitude.
+# Converted to degrees by travel.km_to_degrees, because a given distance in km
+# is a different number of degrees east-west than north-south at this latitude.
 CITY_CENTRE = (12.9716, 77.5946)  # Bangalore
-CITY_SIZE_KM = 8.0
+CITY_SIZE_KM = 7.0
 
 # Fleet size. Sized so a k=2 ring usually holds enough candidates for ranking
-# to mean something: a k=2 disk is ~14 km2 of a 64 km2 city, so about 22% of
-# the fleet, which is ~11 riders at 50. seed.py prints the real figure.
-FLEET_SIZE = 50
+# to mean something: a k=2 disk is ~14.4 km2 of a 49 km2 city, so about 29% of
+# the fleet. seed.py prints the real figure for the current seed.
+#
+# This is the knob that controls CONTENTION, which is what Day 5 depends on.
+# Too large and free riders are always plentiful, so greedy looks perfect and
+# batched matching has nothing to improve. See DECISIONS.md entry 16.
+FLEET_SIZE = 75
 
 # Every random choice in the simulation descends from this one number. Same
 # seed, same orders, same decisions, same output - which is the whole basis of

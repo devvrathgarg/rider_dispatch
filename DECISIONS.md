@@ -623,3 +623,74 @@ destination".
 
 **Revisit when:** something other than the simulator needs to know a rider's
 destination, which would make the split-state option strictly worse than it already is.
+
+---
+
+## 16. Fleet size 75 in a 7 km city, and the difference between reproducible and representative
+
+**Date:** 2026-10-10 - **Decided by:** Devvrath
+
+### How this came up
+
+Seeding 50 riders into an 8 km city was predicted to put about 11 candidates in a `k=2`
+ring. The actual run reported **6**. Investigating rather than adjusting:
+
+```
+actual area of a k=2 disk  : 14.43 km2
+share of a 64 km2 city     : 22.5%
+expected candidates        : 11.3 of 50
+
+over 200 different seeds:
+   mean 11.1   stdev 2.8   min 5   p10 8   median 11   p90 15   max 18
+```
+
+The estimate was right. **Seed 42 simply drew an unusually sparse world** - 6 is near the
+bottom of the range, where the worst of 200 seeds was 5.
+
+### The insight worth more than the setting
+
+**Reproducible and representative are different properties, and conflating them is an
+evaluation error.**
+
+- Determinism gives **comparability**: greedy and matching face an identical world, so a
+  difference between them is real rather than noise.
+- It does **not** give **representativeness**: if the frozen world is atypical, every
+  absolute number from it is atypical too.
+
+So on Day 5, *"matching cut p90 by 14%"* is a valid claim about this world.
+*"Delivery takes 28 minutes"* would be a claim about a world that happens to be
+rider-sparse.
+
+**This makes multiple seeds a Day 4 requirement**, not an optional extra: report a
+distribution across seeds for absolute metrics, and a paired comparison on identical
+seeds for policy differences.
+
+**And the thing deliberately not done:** the seed was not changed to produce a nicer
+number. Choosing the seed that flatters the result is cherry-picking, and "how did you
+pick that seed?" is a question an interviewer will ask.
+
+### The settings
+
+**Options considered**
+
+| Option | Tradeoff |
+| --- | --- |
+| Keep 50 riders in 8 km, report the distribution | Honest, and thin rings make dispatch choices *harder*, which is more interesting. Leaves the headline ring count unrepresentative of the mean. |
+| Raise `FLEET_SIZE` | Comfortable rings on any seed. Directly reduces contention. |
+| Shrink `CITY_SIZE_KM` | Same density effect without more riders. |
+| **Both, modestly** (chosen) | `FLEET_SIZE = 75`, `CITY_SIZE_KM = 7.0`. A `k=2` disk is then ~29% of a 49 km2 city. |
+
+**The risk accepted, stated plainly:** fleet size is the knob that controls
+**contention**, and contention is what Day 5 depends on. Batched min-cost matching only
+beats greedy when free riders are scarce enough that two orders actually compete for
+one rider. If free riders are always plentiful, greedy is near-optimal and the benchmark
+shows nothing - not because matching is bad, but because the scenario has no conflict in
+it. A denser fleet moves in that direction.
+
+Raising the fleet and shrinking the city compounds, so both were applied modestly rather
+than at the sizes first discussed.
+
+**Revisit when:** Day 5 shows little or no gap between greedy and matching. The first
+thing to check then is not the matching code but whether the scenario has enough
+contention to distinguish the two - which means lowering `FLEET_SIZE` or raising the
+order rate, and re-running.
