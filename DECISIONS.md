@@ -694,3 +694,139 @@ than at the sizes first discussed.
 thing to check then is not the matching code but whether the scenario has enough
 contention to distinguish the two - which means lowering `FLEET_SIZE` or raising the
 order rate, and re-running.
+
+---
+
+## 17. Dispatch ranks on travel time to the restaurant, because the exact objective cannot rank differently
+
+**Date:** 2026-10-10 - **Decided by:** Devvrath
+
+**Options considered**
+
+| Option | Tradeoff |
+| --- | --- |
+| **Travel time to the restaurant** (chosen) | The nearest free rider. One number already produced by `travel_times`. |
+| `max(travel, prep_remaining)` | The *exact* objective: the customer waits for `max(arrival, prep_done)` plus the second leg, so minimising this minimises delivery time directly. Travel time is only a proxy for it. Requires prep state to be passed into the request, so the service would need to know the clock. |
+| Total delivery time, both legs | Identical ranking to travel time alone. The second leg is restaurant-to-customer, which does not depend on which rider is chosen - adding the same constant to every candidate cannot change which one wins. |
+
+**The measurement that settled it.** Run against the live 75-rider fleet with a
+restaurant at the city centre:
+
+```
+prep time                         : 720 s
+K=2 disk reach, 2.37 km at 25 km/h: 341 s
+
+travel times of all 19 candidates : 56 s ... 324 s
+option A distinct scores          : 19
+option B distinct scores          : 1
+```
+
+**Every candidate ties under the exact objective.** No rider inside the searchable area
+*can* arrive late, so pickup happens at 720 s whoever is sent. Option B would therefore
+make dispatch choose arbitrarily, and the natural tiebreak to add is travel time - which
+is option A. The proxy and the exact objective order identically here.
+
+**The sentence this buys:** *"I ranked on travel time, and I checked whether the exact
+objective would rank differently. It cannot: my search radius is 341 seconds of travel
+against a 720 second prep, so every candidate arrives early and ties."* That is a
+stronger answer than having implemented the more sophisticated version.
+
+**When B would start to differ:** a shorter prep time, a much larger `K`, or an order
+that has already waited 720+ seconds unassigned.
+
+**Where it lives:** a named function in `dispatch.py`, not a `cost.py`. The function body
+is one line returning its argument; a file for that is tidiness, not design (rule 12b).
+Extracting it takes two minutes if Day 5 needs a second cost to compare.
+
+**Revisit when:** `PREP_SECONDS` drops below the disk's travel reach, or `K_RING` grows
+enough that the far edge of the disk exceeds prep time.
+
+---
+
+## 18. The `/assign` response contract
+
+**Date:** 2026-10-10 - **Decided by:** Devvrath
+
+### No free rider is HTTP 200 with a null id, not an error
+
+| Option | Tradeoff |
+| --- | --- |
+| **200, `{"rider_id": null}`** (chosen) | The request succeeded; the answer is "nobody". The caller checks for null. |
+| 404 Not Found | `/assign` exists - the thing missing is a rider, not the endpoint. |
+| 503 Service Unavailable | Implies the service is broken, which it is not. |
+
+**Why:** entry 2 already decided that an order with no rider in range **retries on a
+later tick**. That makes an empty result designed behaviour that will happen constantly,
+not a failure. Two consequences:
+
+- An error status would force `sim.py` to wrap a routine outcome in exception handling.
+- It would corrupt the Day 6-7 observability work: tracing would show a large error rate
+  during entirely healthy operation. Teaching your own dashboard to lie is worse than
+  the wrong status code.
+
+### The response carries two counts as well as the id
+
+```json
+{"rider_id": "r70", "candidates": 19, "free_candidates": 19}
+```
+
+Entry 2 named a need this serves: an unassigned order has two different causes with two
+different fixes, and they are indistinguishable from outside the service.
+
+| Reading | Means | Fix |
+| --- | --- | --- |
+| `candidates == 0` | Nobody is nearby at all | `K_RING` or `FLEET_SIZE` is too small |
+| `free_candidates == 0` | Riders are nearby but all busy | The fleet is saturated: a load problem, not a geometry one |
+
+Two integers that were already computed, with a named consumer in the Day 4 metrics.
+Without them that metric is undiagnosable.
+
+### `K` comes from config, not from the request
+
+`K_RING` is a Group 1 value by entry 14 - it describes **the experiment**, not the
+machine. Changing it changes what is being measured, so the change belongs in git rather
+than varying silently per request. Sweeping `K=2` against `K=3` on Day 4 means editing
+one line and re-running, which is how an experiment parameter should behave.
+
+### Candidate ids are sorted, and ties break on rider id
+
+`SUNION` returns a set, and Python's string hashing is randomised per process, so set
+iteration order **changes between runs of the same program**. Left alone, two riders with
+identical travel times would be chosen differently on different runs of the same seed.
+
+That would quietly undermine the reproducibility the entire Day 5 benchmark rests on -
+and it would be very hard to find, because it only shows up on exact ties. Sorting the
+candidate ids and breaking ties on rider id makes a request a pure function of the Redis
+state.
+
+**Revisit when:** the service is run as more than one process, where "deterministic given
+the Redis state" stops being achievable anyway.
+
+---
+
+## 19. The dispatch service runs on port 8001
+
+**Date:** 2026-10-10 - **Decided by:** Claude, forced by a collision. Open to reopening.
+
+Port 8000 on this machine is already serving an unrelated project of Devvrath's
+("CivilSpace Audit API"). `uvicorn` failed to bind, logged the error, and exited - while
+`curl` kept getting answers, from the other application.
+
+**This is the second time the same class of mistake has cost time**, after entry 10's
+Redis port. Both times a connection succeeded and the reply looked plausible.
+
+**The lesson, stated properly this time:** a working connection is not evidence you
+reached *your* service. Verify **identity**, not reachability:
+
+| Service | Weak check that lied | Check that works |
+| --- | --- | --- |
+| Redis | `PING` returned `PONG` | A freshly created database is empty |
+| Dispatch | `/docs` returned 200 | `/openapi.json` reports the title `Rider dispatch` |
+
+Checking `/docs` was the specific error: every FastAPI app serves it, so it proves a
+FastAPI app is listening and nothing more.
+
+Recorded in CLAUDE.md as a convention so it is checked rather than remembered.
+
+**Revisit when:** the project moves to a compose file, where service names on an internal
+network remove host port collisions entirely - which would also fix entry 10.

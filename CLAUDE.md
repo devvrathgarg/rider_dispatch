@@ -116,6 +116,12 @@ Decided once, applied everywhere. Violating these silently is a bug.
 - **Redis is on host port 6380**, not the default 6379. Port 6379 belongs to a
   different project of Devvrath's (`facultyhire-redis-1`). Any code or command that
   defaults to 6379 is pointing at the wrong database. See DECISIONS.md entry 10.
+- **The dispatch service is on port 8001**, not the usual 8000. Port 8000 is
+  serving a different project (`CivilSpace Audit API`). See DECISIONS.md entry 19.
+- **Verify you reached THIS service, not just any service.** Both port collisions
+  above produced a working connection to the wrong program. Check identity -
+  `/openapi.json` should report the title `Rider dispatch`, and a fresh Redis
+  database should be empty - rather than trusting that a reply means success.
 
 ---
 
@@ -126,6 +132,10 @@ python travel.py              # self-check for the travel module
 python keys.py                # self-check for the key layout
 python state.py               # self-check for rider state (needs Redis up)
 python seed.py                # wipe and recreate the fleet (needs Redis up)
+python dispatch.py            # self-check for the service (needs a seeded fleet)
+
+uvicorn dispatch:app --host 127.0.0.1 --port 8001    # run the service
+#   then http://127.0.0.1:8001/docs to send a request by hand
 
 docker start dispatch-redis   # Redis on host port 6380
 docker stop dispatch-redis
@@ -150,7 +160,7 @@ More will be added as components land.
 | `metrics.py` | Metric definitions | not started |
 | [state.py](state.py) | Rider state read/write against Redis, and the cell index | done |
 | [seed.py](seed.py) | Create the initial fleet, and report what the index looks like | done |
-| `dispatch.py` | FastAPI service, and the cost function | not started |
+| [dispatch.py](dispatch.py) | FastAPI service, and the cost function | done |
 | `sim.py` | Clock, orders, movement, CSV | not started |
 
 ---

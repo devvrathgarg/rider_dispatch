@@ -29,6 +29,24 @@ H3_RESOLUTION = 8
 CITY_CENTRE = (12.9716, 77.5946)  # Bangalore
 CITY_SIZE_KM = 7.0
 
+# How many rings of H3 cells the dispatch service searches around a restaurant.
+# Fixed rather than expanded outward, because hex-ring number is not distance
+# order: a rider at the far edge of ring 1 can be further away than one at the
+# near edge of ring 2. See DECISIONS.md entry 2.
+#
+# k=2 is 19 cells reaching about 2.37 km. Cost grows as 3k^2+3k+1, so k=3 would
+# buy 0.9 km more reach and more than double the candidates.
+K_RING = 2
+
+# Rider speed. Needed by BOTH processes - the simulator to move riders, the
+# service to estimate arrival - which is the exact case entry 14 exists for. If
+# the two ever disagreed, dispatch would rank using a wrong model of the world
+# and nothing would report an error.
+#
+# A guess about the physical world, so expect to tune it: an urban two-wheeler
+# average including traffic lights, turns and parking.
+RIDER_SPEED_KMH = 25.0
+
 # Fleet size. Sized so a k=2 ring usually holds enough candidates for ranking
 # to mean something: a k=2 disk is ~14.4 km2 of a 49 km2 city, so about 29% of
 # the fleet. seed.py prints the real figure for the current seed.
@@ -52,3 +70,11 @@ REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
 # project, and a connection to it succeeds while talking to the wrong database.
 # See DECISIONS.md entry 10.
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6380"))
+
+# 8001, not the usual 8000. Port 8000 on this machine is already serving a
+# different project of Devvrath's ("CivilSpace Audit API"), so uvicorn silently
+# fails to bind and exits while curl still gets answers - from the wrong app.
+# Second time this exact class of mistake has cost time; see DECISIONS entry 10.
+DISPATCH_HOST = os.getenv("DISPATCH_HOST", "127.0.0.1")
+DISPATCH_PORT = int(os.getenv("DISPATCH_PORT", "8001"))
+DISPATCH_URL = f"http://{DISPATCH_HOST}:{DISPATCH_PORT}"
