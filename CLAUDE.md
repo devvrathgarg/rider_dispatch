@@ -60,6 +60,13 @@ These rules override default behaviour. They are requirements, not preferences.
 12. **No speculative abstraction.** No interface with one implementation unless the
     second implementation is actually planned and named. `TravelTimeProvider` qualifies
     because OSRM is coming; nothing else gets that pass by default.
+12b. **Undergraduate scale, deliberately.** This is a learning project, not a production
+    system, and nobody expects production engineering from it. Prefer the simplest thing
+    that demonstrates the concept. A file containing one line that returns its argument
+    is not a design, it is tidiness. Sophistication is only worth adding when a
+    measurement shows the simple version falling short - and *"I checked whether the
+    clever version would behave differently, and it would not"* is a stronger answer
+    than having built the clever version.
 13. **Every piece of non-trivial logic leaves one runnable check behind.** An
     `assert`-based `__main__` self-check is enough. No test frameworks unless asked.
 
@@ -140,11 +147,10 @@ More will be added as components land.
 | [PLAN.md](PLAN.md) | Why this project exists, what each component is for, the 5-day plan | living |
 | [keys.py](keys.py) | Redis key layout | done |
 | [config.py](config.py) | Shared settings for both processes | done |
-| `cost.py` | Rider cost function | not started |
 | `metrics.py` | Metric definitions | not started |
 | [state.py](state.py) | Rider state read/write against Redis, and the cell index | done |
 | [seed.py](seed.py) | Create the initial fleet, and report what the index looks like | done |
-| `dispatch.py` | FastAPI service | not started |
+| `dispatch.py` | FastAPI service, and the cost function | not started |
 | `sim.py` | Clock, orders, movement, CSV | not started |
 
 ---
