@@ -187,9 +187,35 @@ point of keeping the log.
 | [analyze.py](analyze.py) | Metric reports, for one run or across seeds |
 | [benchmark.py](benchmark.py) | The paired greedy-vs-matching comparison |
 
-## Not in scope
+## Not in scope — and the one that matters
 
 No frontend, no auth, no persistence beyond the CSV. An OSRM travel-time provider is
-designed for but not built — it needs a routing server with real map data.
+designed for but not built; it needs a routing server with real map data.
+
+**The significant omission is order stacking**, and it is deliberate.
+
+Real delivery platforms batch mostly to put **two or three orders onto one rider** —
+collect from two nearby restaurants, drop at two nearby customers, one trip. That is
+where the large real-world gains from "batching" come from, and it is the main reason
+production systems see benefits this project does not.
+
+This simulator assigns **one order per rider**, so that entire category of gain is
+structurally invisible to it. The reason for the limit is that stacking is not a harder
+version of the same problem — it is a different problem:
+
+| 1:1 assignment (built) | Order stacking (not built) |
+| --- | --- |
+| Pick one rider per order | Pick a *set* of orders per rider, **and their visiting order** |
+| Minimum-cost bipartite matching | A vehicle routing problem with time windows |
+| Solved exactly, O(n³), scipy does it in under a millisecond | NP-hard; needs heuristics and a tuned solver |
+| One rider state, one destination | Several orders in flight per rider, each with its own prep deadline |
+
+It would roughly double the project and replace an exactly-solvable problem with an
+approximately-solvable one. So the honest claim is bounded:
+
+> *This measures whether optimal 1:1 assignment beats greedy 1:1 assignment. It does not
+> measure order stacking, which is where most real batching value lives.*
+
+Stating that bound is more useful than quietly implying the 1:1 result generalises.
 
 Load testing with k6 and OpenTelemetry tracing are planned next.

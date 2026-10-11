@@ -20,8 +20,18 @@ the city is. Growing the city only makes disks emptier, giving matching FEWER
 options. What grows is leg two, restaurant to customer - which is identical for
 every candidate rider and therefore cannot change which one wins (Day 5 Part 2).
 
-Prep time attacks the mechanism directly. At PREP_SECONDS = 0 the first leg
-passes straight into delivery time and travel savings are real.
+Prep time attacks the mechanism directly. The values swept are not arbitrary
+and none of them is zero - a kitchen that takes no time is not a restaurant.
+Each one describes a real kind of food business:
+
+  720 s (12 min)  a full-service kitchen. Travel is a third of prep, so it is
+                  absorbed. This is the default configuration.
+  300 s ( 5 min)  a quick-service counter. Travel and prep are comparable.
+  120 s ( 2 min)  coffee, or pre-made items from a kiosk. Travel now EXCEEDS
+                  prep, so the first leg is exposed.
+
+A real delivery platform serves all three at once. The question is which regime
+batched matching is worth deploying for.
 
 The confound, and the compensation
 ----------------------------------
@@ -50,7 +60,13 @@ TARGET_LOAD = 0.60
 SECOND_LEG_SECONDS = 0.5214 * config.CITY_SIZE_KM / config.RIDER_SPEED_KMH * 3600
 FIRST_LEG_SECONDS = 100.0
 
-PREP_VALUES = (720, 240, 0)
+# The spread a policy is choosing between: the 19 candidates in one measured
+# k=2 disk ranged 56 to 324 seconds away, averaging about 230. This is what
+# "comparable to prep" is measured against - it is the number prep either
+# absorbs or does not.
+TYPICAL_CANDIDATE_TRAVEL = 230.0
+
+PREP_VALUES = (720, 300, 120)
 
 REPORTED = (
     ("p90 delivery (min)", "p90_delivery_min"),
@@ -91,12 +107,15 @@ def main(seed_count: int) -> None:
     print("ageing weight %.2f, load held at %.0f%%, %d seeds"
           % (config.AGEING_WEIGHT, 100 * TARGET_LOAD, seed_count))
     print()
-    print("  prep   orders/hr   travel/prep   what it tests")
+    print("  prep   orders/hr   travel/prep   the kind of restaurant")
     for prep in PREP_VALUES:
-        ratio = "infinite" if prep == 0 else "%.2f" % (FIRST_LEG_SECONDS / prep)
-        note = {720: "absorbed (default)", 240: "partly absorbed",
-                0: "not absorbed at all"}[prep]
-        print("  %4d   %9d   %11s   %s" % (prep, rate_for(prep), ratio, note))
+        note = {
+            720: "full-service kitchen  (travel absorbed)",
+            300: "quick-service counter (comparable)",
+            120: "coffee / pre-made     (travel exceeds prep)",
+        }[prep]
+        print("  %4d   %9d   %11.2f   %s"
+              % (prep, rate_for(prep), TYPICAL_CANDIDATE_TRAVEL / prep, note))
     print()
 
     results = []
@@ -144,7 +163,8 @@ def main(seed_count: int) -> None:
     ]
     print("THE TEST")
     print("  If prep absorbing travel is why matching could not win, the median")
-    print("  p90 delta should move toward negative as prep falls:")
+    print("  p90 delta should move toward negative as prep falls - and the")
+    print("  crossover should sit where travel/prep passes 1:")
     for prep, median in primary:
         print("    prep %4d s -> %+.2f min" % (prep, median))
     improving = all(
