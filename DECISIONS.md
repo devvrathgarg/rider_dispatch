@@ -944,3 +944,76 @@ the binding constraint.
 the fleet distribution, not the search radius, is the real problem. Also worth revisiting
 whether the fallback should widen on *saturation* as well as emptiness, which is what
 that 1221 s wait argues for.
+
+---
+
+## 21. p90 delivery time is the primary metric, with three guardrails
+
+**Date:** 2026-10-11 - **Decided by:** Devvrath
+
+### Why a primary metric at all
+
+Day 5 has to declare a winner between greedy and batched matching, and that needs one
+number. But the three parties in a delivery system want incompatible things - customers
+want speed, which costs riders; the company wants fewer riders, which costs speed - so
+"is this run good?" is unanswerable until the objective is declared.
+
+**Options considered**
+
+| Option | Tradeoff |
+| --- | --- |
+| **p90 delivery time** (chosen) | Customer-facing, captures the tail where churn happens, and stable enough to mean something at ~90-150 orders. It is also the number batched matching is *supposed* to improve, so it is the honest thing to be judged on. |
+| Mean delivery time | Simplest, and in this run it tracked the median closely (21.2 vs 21.3). But silent about the tail: the two 40-minute orders moved it by about half a minute. A policy could improve the mean while worsening the worst experiences and this metric would call it a win. |
+| Rider utilisation | A real business metric, and what justifies fleet size. But optimising it pushes toward fewer riders and longer waits - measuring cost efficiency while calling it quality. |
+| A weighted composite | Closest to what a business actually optimises, but the weights are invented and a single blended number hides which component moved. That is the opposite of this project's purpose. |
+
+### The guardrails
+
+A primary metric alone invites a policy that wins by cheating. Each guardrail blocks one
+specific way of doing that:
+
+| Guardrail | Blocks |
+| --- | --- |
+| p50 delivery time | Winning on the tail by making everyone slightly worse |
+| max dispatch wait | Starving one order to improve the aggregate |
+| rider idle-at-restaurant | "Improving" delivery by making riders wait longer instead |
+
+Reported but not judged: utilisation, throughput, riders unused, orders per rider.
+
+**Why p99 is not used:** at 90 orders, p99 is literally the single worst order. It is one
+data point wearing a statistic's name, and quoting it would be dishonest. A p99 needs
+roughly a thousand samples.
+
+### The window rule
+
+Measured on the first run, rates and utilisation came out differently depending on an
+unstated choice:
+
+```
+rider utilisation   whole run 27.9%   order window 34.1%
+throughput          whole run 62.1/h  order window 90.0/h   configured 120/h
+```
+
+The drain phase has no orders arriving **by construction**, so including it in the
+denominator drags both down. Neither figure is wrong; the unstated one is useless.
+
+**Rule: every rate and every utilisation figure names its window.** The convention here
+is the order window, `0` to `RUN_SECONDS`, because that is the period the configuration
+describes.
+
+### Two findings recorded from the first run
+
+**42% of rider busy time is spent standing at a restaurant** - not 42% of the day, 42% of
+the time a rider was actually assigned to something. The quantified cost of assigning
+immediately rather than timing the pickup.
+
+**22 of 75 riders never received a single order**, while one order waited 1221 s because
+the riders *near it* were busy. A third of the fleet idle is entirely compatible with a
+customer waiting twenty minutes: global capacity says nothing about local supply. That
+pairing is the clearest single argument for what this project is studying.
+
+It also flags the entry 16 risk early: 34% utilisation is a light load, so the Day 5 gap
+may be small. If it is, the scenario is the first thing to check, not the algorithm.
+
+**Revisit when:** a run produces enough orders for p99 to be meaningful, at which point
+it is worth asking whether the primary should move from p90 to p99.
