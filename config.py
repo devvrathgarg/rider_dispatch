@@ -14,7 +14,10 @@ belongs (DECISIONS.md entry 14):
 Values join this file when their first consumer appears, not in advance.
 """
 
+import math
 import os
+
+import h3
 
 # --- Group 1: the experiment -------------------------------------------------
 
@@ -44,15 +47,25 @@ CITY_SIZE_KM = 7.0
 # one inside the disk and one outside.
 K_RING = 2
 
-# Ceiling for the fallback search. The service widens past K_RING ONLY when the
-# disk holds no riders at all - which is permanent starvation, not saturation:
-# a fixed K cannot reach further, riders stay where they dropped off (entry 4),
-# and orders never give up, so such an order retries forever. See entry 20.
+# Ceiling for the fallback search, DERIVED rather than guessed. The service
+# widens past K_RING only when a disk holds no riders at all - which is
+# permanent starvation, not saturation: a fixed K cannot reach further, riders
+# stay where they dropped off (entry 4), and orders never give up, so such an
+# order retries forever. See entries 20 and 30.
 #
-# In this 7 km city a res-8 cell is 0.737 km2, so the whole city is only ~66
-# cells: k=3 is 56% of it and k=5 is more than all of it. The ceiling exists
-# because past a point there is nothing further to find.
-MAX_K_RING = 5
+# The ceiling must reach the worst case: a restaurant in one corner of the city
+# with every rider in the opposite corner, which is the DIAGONAL apart. Entry 20
+# set this to 5 by comparing areas - "k=5 covers 67 km2, more than the 49 km2
+# city" - which is wrong reasoning, because the disk is centred on the
+# restaurant and a corner restaurant's disk lies mostly outside the city. k=5
+# reaches 5.13 km against a 9.90 km diagonal, and a run at 217 orders/hour hit
+# exactly that case and could not terminate.
+#
+# Derived here so it cannot go stale if CITY_SIZE_KM changes.
+_CELL_EDGE_KM = h3.average_hexagon_edge_length(H3_RESOLUTION, unit="km")
+_CELL_SPACING_KM = _CELL_EDGE_KM * math.sqrt(3)
+_CITY_DIAGONAL_KM = CITY_SIZE_KM * math.sqrt(2)
+MAX_K_RING = math.ceil((_CITY_DIAGONAL_KM - _CELL_EDGE_KM) / _CELL_SPACING_KM)
 
 # Rider speed. Needed by BOTH processes - the simulator to move riders, the
 # service to estimate arrival - which is the exact case entry 14 exists for. If

@@ -1641,3 +1641,80 @@ to reach delivery time for some reason other than prep absorption, and that reas
 be unknown.
 
 **This entry is deliberately written so it cannot be quietly rewritten afterwards.**
+
+---
+
+## 30. `MAX_K_RING` was wrong, and entry 20's reasoning for it was wrong
+
+**Date:** 2026-10-11 - **Found by the confirmatory run crashing. Amends entry 20.**
+
+### What happened
+
+The pre-registered confirmatory run (entry 29) crashed partway through the `prep=120`
+condition:
+
+```
+RuntimeError: still running after 1441 ticks (4 pending, 0 in flight)
+```
+
+All 75 riders free, four orders unassignable - entry 20's starvation case again, except
+this time the fallback could not rescue it.
+
+### The error, which was in the reasoning not the code
+
+Entry 20 set `MAX_K_RING = 5` by comparing **areas**: *"k=5 covers 67 km2, more than the
+49 km2 city, so there is nothing further to find."*
+
+**That is invalid.** The disk is centred on the **restaurant**, not the city, so a corner
+restaurant's disk lies mostly outside the city. Covering more area than the city says
+nothing about reaching across it.
+
+The correct comparison is reach against the worst case - a restaurant in one corner with
+every rider in the opposite corner, which is the **diagonal** apart:
+
+```
+res-8 cell spacing          0.920 km
+MAX_K_RING = 5 reaches      5.13 km
+city diagonal (7 km square) 9.90 km     <- not covered
+k needed                    11  (10.66 km, 397 cells)
+```
+
+At 217 orders/hour riders drift much harder - entry 4 frees them wherever they drop off -
+so they can vacate a corner entirely. The default 120 orders/hour never stressed it,
+which is why this survived until a scenario changed.
+
+**Fix:** `MAX_K_RING` is now *derived* from `CITY_SIZE_KM` rather than guessed, so it
+cannot go stale if the city changes. 397 cells is one `SUNION` over 397 keys, which is
+still trivial, and the fallback only runs when a disk is empty.
+
+### Do entries 26-28 survive this?
+
+They were measured under the old ceiling, so this had to be checked rather than assumed.
+Re-running greedy on all 20 default seeds with `MAX_K_RING = 11`:
+
+- **Every p90 is identical** to the recorded value at the full precision stored
+  (26.159, 27.580, 37.174, 44.200, ...).
+- **`orders that ever saw an empty disk: 0`** across all 20 seeds.
+
+The second is the decisive one. The fallback stops at the **first** non-empty k, so a
+ceiling that is never reached cannot change behaviour. It was never reached in the
+default configuration. **Entries 26-28 stand unchanged.**
+
+*(The verification script first printed "20 of 20 differing", which was a bug in the
+script: `benchmark.csv` stores values rounded to three decimals and the comparison used a
+1e-9 tolerance against full precision. Recorded here because the wrong verdict was nearly
+believed - an over-strict tolerance on rounded data manufactures differences that are not
+there.)*
+
+### What this does to the pre-registration
+
+**Nothing.** Entry 29's hypothesis, test statistic and decision rule are untouched - only
+broken infrastructure was repaired. Two conditions follow from that, and both are met:
+
+1. The fix applies to **both policies equally**, since the fallback lives in shared code.
+2. **Both prep conditions are re-run from scratch** on the fixed code. The `prep=720`
+   condition had already completed before the crash, and keeping it would confound the
+   comparison with a mid-experiment code change.
+
+**Revisit when:** the city stops being a square, at which point the diagonal is no longer
+the worst case and the derivation needs replacing.
