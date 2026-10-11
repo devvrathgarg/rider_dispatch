@@ -125,6 +125,10 @@ BENCHMARK_SEEDS = 20
 # than computed durations, so a new metric never needs a new simulation run.
 CSV_PATH = "orders.csv"
 
+# Per-seed benchmark results, so the headline number can be checked rather
+# than believed.
+BENCHMARK_CSV_PATH = "benchmark.csv"
+
 
 # --- Group 2: the machine ----------------------------------------------------
 
