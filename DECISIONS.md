@@ -1085,3 +1085,99 @@ different ingredients, with nothing visible to reveal it.
 
 **Revisit when:** a third policy arrives that needs state carried between batches, which
 would make the service stateful and break entry 1's read-only guarantee.
+
+---
+
+## 23. Paired comparison over 20 seeds, and what p90 delivery time can actually detect
+
+**Date:** 2026-10-11 - **Decided by:** Devvrath. **Amends entry 21** rather than replacing it.
+
+### The measurement that prompted this
+
+The same greedy policy, eight different seeds, nothing else changed:
+
+```
+  seed  orders   p50 min   p90 min   max min   worst dispatch wait
+    40     106      20.4      26.5      33.1        179 s
+    41     120      21.4      27.0      30.5        117 s
+    42      90      21.3      26.2      39.8       1221 s
+    43     118      20.8      26.7      34.1       1052 s
+    44     121      21.8      27.6      46.7       1629 s
+    45     124      19.8      26.0      30.5        819 s
+    46     112      20.1      26.7      31.6        999 s
+    47     126      20.2      25.7      29.9        187 s
+
+p90 across seeds: min 25.7  median 26.6  max 27.6  stdev 0.60 min
+```
+
+**The hypothesis was wrong.** This was set up expecting p90 to swing wildly between seeds.
+It barely moves - 2.3% - even while the order count swings from 90 to 126.
+
+What *does* swing is the extremes:
+
+| | Range | Factor |
+| --- | --- | --- |
+| p90 delivery | 25.7 - 27.6 min | 1.07x |
+| worst delivery | 29.9 - 46.7 min | 1.56x |
+| **worst dispatch wait** | 117 - 1629 s | **14x** |
+
+**Consequence for entry 21:** one of its guardrails, max dispatch wait, is itself 14x
+unstable. A claim about it from a single run is worthless, so it must be reported across
+seeds or not reported at all.
+
+### Why p90 is so stable, and the problem that creates
+
+Decomposing a 26-minute delivery:
+
+| Component | Minutes | Policy-controlled? |
+| --- | --- | --- |
+| Prep time | 12.0 | No, fixed |
+| Leg 2, restaurant to customer | ~9.0 | No, identical for any rider |
+| Dispatch wait plus leg 1 | ~5.0 | Partly |
+
+**About 21 of 26 minutes is policy-independent.** That is why the seed barely matters -
+and it also means **p90 delivery time is an insensitive instrument for comparing
+policies**.
+
+It compounds with entry 17: when a rider arrives before the food is ready, leg 1 does not
+affect delivery *at all* - the food waits, not the customer. So choosing a nearer rider
+frequently changes nothing downstream.
+
+**What batched matching can actually improve** is dispatch wait, when orders queue because
+nearby riders are busy, and rider efficiency. **Not** leg-1 distance, which prep time
+mostly absorbs. The expected effect on the headline metric is a few percent, not dramatic.
+
+This decomposition should have been done before choosing the metric in entry 21.
+
+**Options considered**
+
+| Option | Tradeoff |
+| --- | --- |
+| **Keep p90 delivery, add dispatch-wait percentiles** (chosen) | The customer metric stays the judge: a policy that does not move it has not helped the customer, however clever. p50/p90 dispatch wait is added as a diagnostic, so when the headline moves it is possible to say *which component* moved. |
+| Switch primary to p90 dispatch wait | Large effect size, clean signal, measures what the policy controls. But not customer-facing - a big "win" the customer never notices. Easy to attack. |
+| Two co-primaries | Fully honest, but provides no rule for when the two disagree, which is exactly when a rule is needed. |
+
+### Paired comparison, not two groups
+
+Comparing *the average of greedy over 20 seeds* against *the average of matching over 20
+seeds* carries all the seed-to-seed noise into both numbers.
+
+Pairing instead computes, for each seed, `delta = p90_matching - p90_greedy`, and reports
+the **distribution of deltas**. Seed 44 is a hard world - 121 orders, a 1629 s worst wait -
+and both policies face that same hard world, so "seed 44 is hard" affects both sides
+equally and **cancels out of the difference**. The largest source of variation is removed
+for free.
+
+The claim this produces has a shape: *"matching improved p90 on 17 of 20 seeds, median
+improvement 0.6 min, and on the three it lost it lost by under 0.2 min"* - which survives
+"how do you know that is not noise?" in a way that *"14% better"* does not.
+
+**20 seeds**, roughly 7 minutes for both policies at 10.7 s per run. Enough for a
+win/loss count to carry weight and for an interval around the median delta. 8 seeds was
+rejected as too weak to detect a few-percent effect against a 0.6 min per-seed standard
+deviation; 50 was rejected as slow enough that it would stop being re-run while
+iterating, which is when feedback matters most.
+
+**Revisit when:** the matching policy is in place and the observed delta distribution is
+known. If the deltas are much tighter than 0.6 min, fewer seeds would do; if they
+straddle zero, more are needed.
