@@ -109,6 +109,18 @@ RESTAURANT_COUNT = 20
 # A rider arriving before this has elapsed waits at the restaurant.
 PREP_SECONDS = 12 * 60
 
+# Which assignment policy the dispatch service uses. An experiment value by
+# entry 14, so a change shows up in git and a result stays traceable to a
+# commit. Read by the service at IMPORT, so changing it means restarting
+# uvicorn - the simulator checks the policy the service reports at startup, so
+# forgetting to restart is an error rather than a silently ruined benchmark.
+POLICY = "greedy"
+
+# How many seeds the paired benchmark runs. Enough for a win/loss count to
+# carry weight against a per-seed p90 standard deviation of about 0.6 min
+# (entry 23). At roughly 11 s a run, 20 seeds is ~4 minutes per policy.
+BENCHMARK_SEEDS = 20
+
 # Where the per-order log is written. One row per order, raw timestamps rather
 # than computed durations, so a new metric never needs a new simulation run.
 CSV_PATH = "orders.csv"

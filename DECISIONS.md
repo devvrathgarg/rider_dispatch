@@ -1181,3 +1181,82 @@ iterating, which is when feedback matters most.
 **Revisit when:** the matching policy is in place and the observed delta distribution is
 known. If the deltas are much tighter than 0.6 min, fewer seeds would do; if they
 straddle zero, more are needed.
+
+---
+
+## 24. Entry 23's "p90 is stable" was wrong. Eight seeds was too few.
+
+**Date:** 2026-10-11 - **Decided by:** measurement. **Supersedes entry 23's stability claim.**
+
+Entry 23 concluded, from eight seeds, that p90 delivery time barely moves between seeds -
+stdev 0.60 min, a 2.3% spread. Running twenty seeds immediately after the harness was
+built:
+
+```
+  seed  orders   p90 del   p50 del   p90 disp   max disp   util
+    47     126      25.7      20.2          9        187   48.3%
+    50     108      24.7      19.6         10        502   38.2%
+    52     135      37.2      22.3       1428       2622   43.6%
+    60     141      27.1      21.4        261        984   50.5%
+    61     131      44.2      22.8       1811       4669   38.1%
+
+  metric                      min   median      max    stdev
+  p90 delivery (min)        24.73    26.69    44.20     4.53
+  p50 delivery (min)        19.63    20.97    22.79     0.86
+  max dispatch wait (s)      9.71   991.18  4669.40  1052.32
+  orders                    90.00   120.00   141.00    11.65
+```
+
+**The real standard deviation is 4.53 min, not 0.60 - seven times larger.** The eight-seed
+sample happened to contain only seeds producing 90-126 orders. At 131-135 orders the
+system tips into saturation and p90 jumps to 37-44 minutes.
+
+**This is the second time a small sample produced a confident wrong conclusion in this
+project.** The first was seed 42, which turned out to be the minimum of sixty seeds for
+both ring density (entry 16) and order count. The pattern is worth naming: *a sample
+drawn to demonstrate variance is itself subject to variance.* Eight seeds was chosen
+casually for a demo and quietly became the basis of a recorded decision.
+
+### Entry 23's decomposition also needs qualifying
+
+Entry 23 said about 21 of 26 minutes is policy-independent (12 prep, 9 second leg),
+leaving ~5 minutes the policy controls, and concluded that p90 delivery is an insensitive
+instrument.
+
+That holds for a **median** run. It does not hold where it matters. On seed 61, p90 is
+44.2 minutes - the same ~21 minutes of prep and second leg leaves **23 minutes** of
+dispatch wait. On the saturated seeds the policy-controlled component **dominates**.
+
+So p90 delivery is a better instrument than entry 23 feared: it is nearly flat on quiet
+seeds and highly sensitive on congested ones, which is exactly where a better policy
+should help. The expected delta distribution is therefore **bimodal** - near zero on most
+seeds, large on a few - and the median delta alone will understate the effect. The
+win/loss count and the per-seed table matter more than any single summary number.
+
+### The finding that most supports the project's thesis
+
+| | orders | utilisation | p90 delivery | max dispatch wait |
+| --- | --- | --- | --- | --- |
+| seed 60 | 141 | **50.5%** | 27.1 min | 984 s |
+| seed 61 | 131 | **38.1%** | **44.2 min** | **4669 s** |
+
+Seed 61 carried **fewer orders** and used **less of the fleet**, yet served customers far
+worse - a worst-case dispatch wait of 78 minutes against 16.
+
+**Capacity was not the constraint. Location was.** Riders sat idle while orders queued,
+because the orders were in places the riders were not. That is the clearest evidence yet
+for the thing this simulator exists to study, and it is the case batched matching should
+improve: the problem is not having too few riders, it is committing the wrong one.
+
+### Consequences
+
+- The noise floor for a single-run comparison is ~9 min (2 stdev), so a single-run
+  policy comparison is worthless. Paired comparison is not a refinement; it is the only
+  workable method.
+- `max dispatch wait` as a guardrail (entry 21) has stdev 1052 s across seeds. It can
+  only ever be reported as a distribution.
+- 20 seeds costs 189 s. There is no reason to use fewer.
+
+**Revisit when:** the delta distribution from Day 5 is known. If it is as bimodal as
+predicted above, reporting should lead with the per-seed table and the win/loss count
+rather than a median.

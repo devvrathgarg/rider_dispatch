@@ -233,28 +233,45 @@ class Simulator:
             self.next_index += 1
 
     def assign_pending(self) -> None:
-        """Phase 4: ask the service for a rider for each waiting order.
+        """Phase 4: ask the service to assign every order still waiting.
 
-        Oldest order first, ties broken on id. Orders are assigned ONE AT A
-        TIME, which is what makes this greedy: the first order takes the nearest
-        rider with no knowledge that a second order needed it. Marking that
-        rider busy in Redis is what stops the next call returning it again.
+        Oldest order first, ties broken on id. **That list order is the priority
+        order**, and the service honours it - so the FIFO rule lives here, in
+        the component that actually has a queue, while the decision of which
+        rider stays in the dispatcher.
 
-        That sequential loop is the entire thing Day 5's batched matching
-        replaces. Nothing else in the tick changes.
+        One HTTP round trip for the whole batch instead of one per order. The
+        service avoids handing the same rider to two orders inside the batch
+        itself, which is the thing a per-order endpoint could not express
+        (entry 22).
         """
+        if not self.pending:
+            return
+
+        batch = sorted(self.pending, key=lambda o: (o.created, o.order_id))
+        reply = self.client.post(
+            "/assign_batch",
+            json={
+                "orders": [
+                    {
+                        "order_id": order.order_id,
+                        "lat": order.restaurant[0],
+                        "lng": order.restaurant[1],
+                    }
+                    for order in batch
+                ]
+            },
+        )
+        reply.raise_for_status()
+
+        orders_by_id = {order.order_id: order for order in batch}
         still_pending = []
 
-        for order in sorted(self.pending, key=lambda o: (o.created, o.order_id)):
-            reply = self.client.post(
-                "/assign",
-                json={"lat": order.restaurant[0], "lng": order.restaurant[1]},
-            )
-            reply.raise_for_status()
-            body = reply.json()
+        for assignment in reply.json()["assignments"]:
+            order = orders_by_id[assignment["order_id"]]
 
-            if body["rider_id"] is None:
-                if body["candidates"] == 0:
+            if assignment["rider_id"] is None:
+                if assignment["candidates"] == 0:
                     order.attempts_no_candidate += 1
                 else:
                     order.attempts_all_busy += 1
@@ -262,12 +279,12 @@ class Simulator:
                 continue
 
             state.assign_to_restaurant(
-                body["rider_id"], order.order_id, order.restaurant
+                assignment["rider_id"], order.order_id, order.restaurant
             )
             order.assigned = self.now
-            order.rider_id = body["rider_id"]
-            order.search_k = body["search_k"]
-            self.orders_by_rider[body["rider_id"]] = order
+            order.rider_id = assignment["rider_id"]
+            order.search_k = assignment["search_k"]
+            self.orders_by_rider[assignment["rider_id"]] = order
 
         self.pending = still_pending
 
@@ -346,6 +363,20 @@ def check_service(client: httpx.Client) -> None:
         raise SystemExit(
             f"Something else is on {config.DISPATCH_URL}: it calls itself "
             f"{info!r}, not 'Rider dispatch'."
+        )
+
+    # Which policy is the service ACTUALLY running? config.POLICY is read at
+    # import, so a uvicorn started before the config changed would quietly keep
+    # running the old policy while this process believed otherwise - which
+    # would benchmark greedy against greedy and look like a real result. An
+    # empty batch costs nothing and turns that into an error.
+    reply = client.post("/assign_batch", json={"orders": []})
+    reply.raise_for_status()
+    running = reply.json()["policy"]
+    if running != config.POLICY:
+        raise SystemExit(
+            f"The service is running policy {running!r} but config.POLICY is "
+            f"{config.POLICY!r}. Restart uvicorn to pick up the change."
         )
 
 
