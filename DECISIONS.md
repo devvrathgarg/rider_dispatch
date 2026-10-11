@@ -1430,3 +1430,86 @@ which is the behaviour pure travel time fails to produce.
 level.** Whether to implement it is decision 27.
 
 **Revisit when:** never - this entry records a measured result rather than a choice.
+
+---
+
+## 27. Ageing fixed the starvation. Matching still cannot beat greedy here, and the reason is prep time.
+
+**Date:** 2026-10-11 - **The project's final result.**
+
+### The fix
+
+`cost = travel_seconds - AGEING_WEIGHT * waited_seconds`, weight 1.0, chosen from first
+principles rather than tuned: a second of waiting adds a second to delivery for an order
+whose food is ready, while a second of travel adds roughly nothing for one still cooking
+(entry 17). Tuning the weight against p90 would have been fitting the benchmark.
+
+Two invariances were asserted before measuring anything, because both are provable:
+
+- **Ageing cannot change greedy.** The discount is identical for every rider of a given
+  order, so that order's cheapest rider is the same either way. Confirmed by greedy's
+  full-run CSV staying byte-identical (`md5 e836ef7f...`), which also proves the
+  benchmark baseline was untouched.
+- **Ageing cannot change matching while riders outnumber orders.** Every order is
+  assigned regardless, and subtracting a constant from a whole row does not change which
+  assignment is optimal.
+
+It bites only when riders are scarcer than orders and the solver must choose **which**
+orders to serve - a discounted row is cheaper to include. Measured on random matrices:
+0 of 2000 assignments changed with riders in surplus, 1955 of 2000 with riders scarce.
+
+### The result, paired over the same 20 seeds
+
+```
+                     BEFORE ageing             AFTER ageing
+p90 delivery      1 win / 7 loss / 12 tie   1 win / 2 loss / 17 tie
+  worst regression        +17.86 min              +0.22 min
+max dispatch wait 1 win /10 loss /  9 tie   2 win / 4 loss / 14 tie
+  worst regression        +2563 s                  +150 s
+seed 61 p90            44.2 -> 62.1            44.2 -> 44.2
+seed 61 max wait       4669 -> 7232            4669 -> 4354
+```
+
+**Entry 26's diagnosis is confirmed.** Two predictions were written down before the run
+and both held: the previously-tied seeds stayed tied, as the row-shift invariance
+required, and seed 61's catastrophic regression collapsed to zero. The harm was
+starvation, and removing the starvation removed the harm.
+
+### But matching only ties
+
+17 of 20 seeds are now identical, with a median change of `+0.00` on every metric. The
+honest conclusion is not "matching is better" and no longer "matching is worse" - it is
+**matching is equivalent, and therefore not worth deploying.**
+
+The reason is entry 23's decomposition. Of a 26-minute delivery, roughly 12 minutes is
+prep and 9 is the second leg - neither of which any assignment policy can touch. Matching
+optimises travel time on the first leg, and entry 17 established that prep time absorbs
+it: a rider arriving 200 seconds sooner changes the customer's delivery time by zero.
+
+**There is almost nothing for a better assignment algorithm to win.** Greedy is already
+near the ceiling that prep time imposes.
+
+### What this says about where the real lever is
+
+Two measurements from earlier now carry the weight:
+
+- **42% of rider busy time is spent standing at a restaurant** waiting for food. The
+  fix is not a better assignment; it is a *later* one - delay assignment so the rider
+  arrives as the food does. That converts idle rider time into capacity without touching
+  the matching problem at all.
+- **Capacity is not the constraint; location is.** Seed 61 carried fewer orders and used
+  less of the fleet than seed 60, yet produced a 78-minute worst dispatch wait against
+  16. Repositioning idle riders toward demand addresses that; choosing among the riders
+  that happen to be nearby does not.
+
+**The sentence this project exists to support:** *"I built the clever algorithm,
+benchmarked it properly, and found it was worth nothing in this system - because I had
+measured that prep time absorbs the thing it optimises. The lever was delayed assignment
+and rider repositioning, not assignment quality."*
+
+That is a more useful finding than a 10% improvement would have been, and it was only
+visible because the metric set had guardrails and the comparison was paired.
+
+**Revisit when:** prep time drops, the city grows so travel stops being absorbed, or
+delayed assignment is implemented - any of which would make the first leg matter enough
+for matching to have something to win.

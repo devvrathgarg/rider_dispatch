@@ -7,26 +7,48 @@ The answer turned out to be no, for a reason worth more than a yes would have be
 
 ## The result
 
-Paired over 20 seeds — both policies facing the identical order stream and starting
-fleet on each seed — minimum-cost matching **improved the primary metric on 1 seed out
-of 20 and degraded it on 7.** On the worst seed it turned a 44-minute p90 delivery time
-into 62 minutes.
+Paired over 20 seeds — both policies facing the identical order stream and starting fleet
+on each seed — the answer came in two stages.
 
-It was not a bug. The implementation is verified against an exhaustive brute-force
-optimum, and it provably never assigns fewer orders than greedy. It minimises total
-travel time exactly as asked.
+**Stage one: pure min-cost matching lost badly.** It improved the primary metric on 1
+seed of 20 and degraded it on 7, turning a 44-minute p90 delivery time into 62 minutes on
+the worst seed.
 
-**Total travel time is simply the wrong objective.** A 12-minute food prep time absorbs
-most travel, so arriving 200 seconds sooner usually changes the customer's delivery time
-by zero — while the reordering needed to save those seconds pushes the oldest waiting
-order further back. Matching spent something valuable to buy something worthless.
+Not a bug: the implementation is verified against an exhaustive brute-force optimum and
+provably never assigns fewer orders than greedy. It minimises total travel time exactly
+as asked. **Total travel time is the wrong objective.** A 12-minute food prep absorbs most
+travel, so arriving 200 seconds sooner usually changes delivery time by zero — while the
+reordering needed to save those seconds pushes the oldest waiting order further back.
+Underneath it was *redistributing*: p90 dispatch wait improved on 9 seeds while max
+dispatch wait degraded on 10. It took time off the middle and dumped it on the tail.
 
-Underneath, it was *redistributing* rather than wasting: p90 dispatch wait improved on 9
-seeds of 20 while max dispatch wait degraded on 10. It took time off the middle and
-dumped it on the tail — the exact failure mode a guardrail metric was added to catch,
-since the primary metric's median change was `+0.00`.
+**Stage two: an ageing term fixed the harm, and matching became merely equal.**
 
-The full reasoning, with numbers, is [DECISIONS.md](DECISIONS.md) entry 26.
+```
+                     BEFORE ageing             AFTER ageing
+p90 delivery      1 win / 7 loss / 12 tie   1 win / 2 loss / 17 tie
+  worst regression        +17.86 min              +0.22 min
+max dispatch wait 1 win /10 loss /  9 tie   2 win / 4 loss / 14 tie
+  worst regression        +2563 s                  +150 s
+seed 61 p90            44.2 -> 62.1            44.2 -> 44.2
+```
+
+Discounting an order's cost by how long it has waited removed the starvation and
+confirmed the diagnosis — two predictions written before the run both held. But 17 of 20
+seeds are now *identical*, median change `+0.00`.
+
+**So the conclusion is "equivalent, and therefore not worth deploying."** Of a 26-minute
+delivery, ~12 minutes is prep and ~9 is the second leg; neither is touchable by any
+assignment policy. There is almost nothing for a better algorithm to win, because greedy
+is already near the ceiling prep time imposes.
+
+**Where the real lever is**, from two earlier measurements: 42% of rider busy time is
+spent standing at a restaurant waiting for food — which calls for a *later* assignment,
+not a better one. And capacity is not the constraint, location is: one seed carried fewer
+orders and used less of the fleet than another yet produced a 78-minute worst dispatch
+wait against 16.
+
+The full reasoning, with numbers, is [DECISIONS.md](DECISIONS.md) entries 26 and 27.
 
 ## Running it
 
