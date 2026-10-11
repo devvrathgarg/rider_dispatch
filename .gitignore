@@ -5,3 +5,4 @@ venv/
 .env
 *.csv
 benchmark.csv
+sweep.csv

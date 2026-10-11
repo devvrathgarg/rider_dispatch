@@ -147,6 +147,7 @@ python metrics.py             # self-check for the metric definitions
 python analyze.py             # metric report for the last run's CSV
 python analyze.py seeds 20    # run 20 seeds, report the spread
 python benchmark.py 20        # greedy vs matching, paired, 20 seeds
+python sweep.py 20            # the ageing-weight trade-off curve
 #   benchmark.py needs Redis but NOT the service: it drives the app
 #   in-process, which is how one process can switch policy
 
@@ -173,6 +174,7 @@ More will be added as components land.
 | [metrics.py](metrics.py) | Metric definitions and the paired comparison | done |
 | [analyze.py](analyze.py) | Metric reports, for one CSV or across seeds | done |
 | [benchmark.py](benchmark.py) | Paired greedy-vs-matching comparison | done |
+| [sweep.py](sweep.py) | The ageing-weight sensitivity curve | done |
 | [state.py](state.py) | Rider state read/write against Redis, and the cell index | done |
 | [seed.py](seed.py) | Create the initial fleet, and report what the index looks like | done |
 | [dispatch.py](dispatch.py) | FastAPI service, the cost function, greedy and matching | done |

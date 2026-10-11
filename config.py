@@ -148,6 +148,10 @@ CSV_PATH = "orders.csv"
 # than believed.
 BENCHMARK_CSV_PATH = "benchmark.csv"
 
+# Every seed at every ageing weight, so the trade-off curve can be checked
+# rather than believed.
+SWEEP_CSV_PATH = "sweep.csv"
+
 
 # --- Group 2: the machine ----------------------------------------------------
 
