@@ -60,6 +60,11 @@ class AssignResponse(BaseModel):
     candidates: int
     free_candidates: int
 
+    # Which K actually found the candidates. Anything above config.K_RING means
+    # the primary disk was empty and the fallback widened - a signal that the
+    # fleet is badly distributed, not that it is busy.
+    search_k: int
+
 
 def cost_of(travel_seconds: float) -> float:
     """What dispatch ranks on. Lowest wins.
@@ -77,6 +82,35 @@ def cost_of(travel_seconds: float) -> float:
     return travel_seconds
 
 
+def find_candidate_ids(restaurant_cell: str) -> tuple[list[str], int]:
+    """Rider ids near a restaurant, and the K that found them.
+
+    The primary search is the fixed `config.K_RING`, and in the normal case this
+    returns after one SUNION. Widening happens ONLY when a disk contains no
+    riders whatsoever, which is a different situation from "all of them are
+    busy": an empty disk is permanent, because a fixed K cannot reach further
+    and riders never reposition, so the order would retry forever (entry 20).
+
+    This does not reopen entry 2's objection to expanding rings. That was about
+    stopping at the first non-empty RING and calling its best rider the nearest.
+    Here the whole disk is still ranked - just a larger one.
+
+    Ids are sorted because SUNION returns a set and Python's string hashing is
+    randomised per process, so set iteration order changes between runs. Without
+    this, two riders with identical travel times would be chosen differently on
+    different runs of the same seed, quietly undermining the reproducibility the
+    Day 5 benchmark rests on.
+    """
+    k = config.K_RING
+    while k <= config.MAX_K_RING:
+        cells = h3.grid_disk(restaurant_cell, k)
+        rider_ids = sorted(state.riders_in_cells(cells))
+        if rider_ids:
+            return rider_ids, k
+        k += 1
+    return [], config.MAX_K_RING
+
+
 @app.post("/assign")
 def assign(request: AssignRequest) -> AssignResponse:
     restaurant: Point = (request.lat, request.lng)
@@ -86,15 +120,8 @@ def assign(request: AssignRequest) -> AssignResponse:
     restaurant_cell = h3.latlng_to_cell(
         request.lat, request.lng, config.H3_RESOLUTION
     )
-    search_cells = h3.grid_disk(restaurant_cell, config.K_RING)
 
-    # Sorted because SUNION returns a set, and Python's string hashing is
-    # randomised per process - so set iteration order changes between runs.
-    # Without this, two riders with identical travel times would be chosen
-    # differently on different runs of the same seed, which would quietly
-    # undermine the reproducibility the whole benchmark rests on.
-    candidate_ids = sorted(state.riders_in_cells(search_cells))
-
+    candidate_ids, search_k = find_candidate_ids(restaurant_cell)
     riders = state.read_riders(candidate_ids)
     free_riders = [rider for rider in riders if rider.state == state.FREE]
 
@@ -103,6 +130,7 @@ def assign(request: AssignRequest) -> AssignResponse:
             rider_id=None,
             candidates=len(riders),
             free_candidates=0,
+            search_k=search_k,
         )
 
     seconds = travel.travel_times(restaurant, [r.position for r in free_riders])
@@ -117,6 +145,7 @@ def assign(request: AssignRequest) -> AssignResponse:
         rider_id=best_rider_id,
         candidates=len(riders),
         free_candidates=len(free_riders),
+        search_k=search_k,
     )
 
 
@@ -134,28 +163,37 @@ if __name__ == "__main__":
     assert body["rider_id"] is not None, body
     assert body["candidates"] > 0
     assert body["free_candidates"] > 0
+    assert body["search_k"] == config.K_RING, "the centre should not need widening"
     winner = body["rider_id"]
-    print("centre of the city -> %s (%d candidates, %d free)"
-          % (winner, body["candidates"], body["free_candidates"]))
+    print("centre of the city -> %s (%d candidates, %d free, k=%d)"
+          % (winner, body["candidates"], body["free_candidates"], body["search_k"]))
 
     # 2. the same request twice gives the same answer: no hidden randomness
     again = client.post("/assign", json={"lat": 12.9716, "lng": 77.5946}).json()
     assert again["rider_id"] == winner, "dispatch is not deterministic"
 
     # 3. the winner really is the nearest free rider, checked independently
-    riders = state.read_riders(sorted(state.riders_in_cells(
-        h3.grid_disk(h3.latlng_to_cell(12.9716, 77.5946, config.H3_RESOLUTION),
-                     config.K_RING))))
+    ids, _ = find_candidate_ids(
+        h3.latlng_to_cell(12.9716, 77.5946, config.H3_RESOLUTION)
+    )
+    riders = state.read_riders(ids)
     free = [r for r in riders if r.state == state.FREE]
     nearest = min(free, key=lambda r: travel.travel_times(
         (12.9716, 77.5946), [r.position])[0])
     assert winner == nearest.rider_id, f"{winner} chosen but {nearest.rider_id} is nearer"
 
-    # 4. nowhere near the fleet: no candidates at all, still HTTP 200
+    # 4. nowhere near the fleet: the fallback widens all the way out, finds
+    #    nobody, and still answers HTTP 200 rather than erroring.
     empty = client.post("/assign", json={"lat": 0.0, "lng": 0.0})
     assert empty.status_code == 200
-    assert empty.json() == {"rider_id": None, "candidates": 0, "free_candidates": 0}
-    print("middle of the ocean -> no rider, HTTP 200, candidates 0")
+    assert empty.json() == {
+        "rider_id": None,
+        "candidates": 0,
+        "free_candidates": 0,
+        "search_k": config.MAX_K_RING,
+    }
+    print("middle of the ocean -> no rider, HTTP 200, widened to k=%d and still none"
+          % config.MAX_K_RING)
 
     # 5. a busy rider is not a candidate: the winner should change
     state.assign_to_restaurant(winner, "selftest-order", (12.9716, 77.5946))

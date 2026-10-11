@@ -48,11 +48,36 @@ ORDER_FIELDS = ("target_lat", "target_lng", "order_id")
 
 # decode_responses=True so Redis returns str and never bytes. Mixing the two is
 # miserable: b'free' == 'free' is False, forever, in every comparison.
+#
+# The timeouts are not decoration. With no connect timeout, a Redis that is
+# simply not running does not fail - on Windows the TCP connect hangs rather
+# than being refused, and redis-py retries, so the caller waits indefinitely
+# with no output at all. That cost a five-minute debugging session for what is
+# really "you forgot to start Docker". Two seconds is plenty for a local socket.
 client = redis.Redis(
     host=config.REDIS_HOST,
     port=config.REDIS_PORT,
     decode_responses=True,
+    socket_connect_timeout=2,
+    socket_timeout=5,
 )
+
+
+def require_redis() -> None:
+    """Fail immediately, with instructions, if Redis is not up.
+
+    Called at the start of anything long-running. The point is that the failure
+    arrives in two seconds with a fix in it, rather than as an unexplained
+    stall.
+    """
+    try:
+        client.ping()
+    except redis.exceptions.RedisError:
+        raise SystemExit(
+            f"No Redis at {config.REDIS_HOST}:{config.REDIS_PORT}.\n"
+            "  docker start dispatch-redis\n"
+            "If Docker itself is not running, start Docker Desktop first."
+        )
 
 
 @dataclass(frozen=True)
@@ -267,6 +292,8 @@ def clear_all() -> int:
 
 
 if __name__ == "__main__":
+    require_redis()
+
     # Ids are namespaced so this check never touches a real fleet, and it does
     # not call clear_all() for the same reason.
     A = "selftest-a"

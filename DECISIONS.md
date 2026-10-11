@@ -76,8 +76,13 @@ is decided once, and within it the ranking is honest.
 | Reach, centre to outer centre | 1.84 km |
 | Reach, outer boundary | 2.37 km |
 
-So `k=2` covers roughly a 2.4 km radius. These are averages over a grid whose cells are
-not equal in area, so the real reach still wants measuring in the sim. An earlier version
+**`k=2` is NOT a 2.4 km radius**, and entry 20 records measuring this the hard way. The
+disk is a hexagonal region whose furthest corner is ~2.37 km out but whose flat sides are
+nearer, and it is centred on the restaurant's **cell**, not the restaurant, so the whole
+region is offset by up to ~0.53 km. Two restaurants whose nearest rider sat at the same
+1.84 km were measured one inside its disk and one outside. The honest phrasing is "a
+hexagonal region roughly 1.8-2.4 km across, offset by where the restaurant falls inside
+its cell". An earlier version
 of this entry said 0.46 km edge and about 2 km reach, from memory rather than from the
 library; the numbers above were run.
 
@@ -830,3 +835,112 @@ Recorded in CLAUDE.md as a convention so it is checked rather than remembered.
 
 **Revisit when:** the project moves to a compose file, where service names on an internal
 network remove host port collisions entirely - which would also fix entry 10.
+
+---
+
+## 20. The search widens past `K_RING` when, and only when, the disk holds no riders at all
+
+**Date:** 2026-10-11 - **Decided by:** Devvrath. **Amends entry 2** rather than reversing it.
+
+### How this surfaced
+
+The first complete `sim.py` run never finished. It hit the tick ceiling with **one order
+pending and zero in flight** - that is, with all 75 riders free and idle, and one order
+that could not be assigned to any of them.
+
+Diagnosis against the live fleet:
+
+```
+fleet state: 75 riders, 75 free
+
+  restaurant  7  candidates in k=2:  0   nearest rider 2.08 km  <-- UNSERVEABLE
+  restaurant 12  candidates in k=2:  0   nearest rider 1.84 km  <-- UNSERVEABLE
+  restaurant 15  candidates in k=2:  4   nearest rider 1.84 km
+```
+
+### Three sound decisions combining into a hole
+
+| Decision | Contribution |
+| --- | --- |
+| Entry 2 - fixed `K` | The search cannot reach further |
+| Entry 4 - riders go free at the dropoff | Nothing ever repositions them |
+| Entry 16's run policy - retry forever | Nothing ever gives up |
+
+Each is defensible alone. Together they produce an order that **can never be served and
+never stops trying**, so the drain phase cannot terminate. This was not a coding bug: the
+system did exactly what it was specified to do, and the specification had a gap.
+
+**The diagnostic worked as designed.** Entry 18's `candidates` field said `0`, which
+distinguishes *"this is geometry"* from *"this is saturation"*. The fleet was not busy; it
+was in the wrong places.
+
+**Options considered**
+
+| Option | Tradeoff |
+| --- | --- |
+| **Widen only from an empty disk, with a ceiling** (chosen) | Primary search stays the fixed `K_RING`, so the normal path is unchanged and still one SUNION. Every order gets served, so the CSV stays complete and unbiased. |
+| Cancel after 15 minutes unassigned | Realistic - real systems refund. But it adds a second outcome every Day 4 metric must handle, and the two sparse restaurants would have had *every* order cancelled, which distorts the run rather than fixing it. |
+| Reposition idle riders toward demand | Addresses the root cause and is what real systems do. A new feature with its own policy decisions, well beyond what was needed. |
+
+**Why this does not reopen entry 2.** Entry 2 rejected expanding rings because *the first
+non-empty ring is not necessarily the ring containing the nearest rider* - hex-ring number
+is not distance order. That objection is about **ranking**. Here the whole disk is still
+ranked; only its size changes, and only when the alternative is an order that is never
+served. The fallback steps outward to `MAX_K_RING = 5` rather than jumping to a fixed
+number, so it stays correct on seeds other than this one.
+
+**Sized by measurement, not guesswork:** both starved restaurants needed `k=3`. In this
+7 km city a res-8 cell is 0.737 km2, so the whole city is only ~66 cells - `k=3` is 56%
+of it and `k=5` more than all of it. The ceiling exists because past a point there is
+nothing further to find. In a real 700 km2 city, `k=3` would be a neighbourhood.
+
+### The correction this forced
+
+`k=2` had been described throughout as "about a 2.4 km radius". **It is not a radius.**
+
+Restaurants 12 and 15 both had their nearest rider at **exactly 1.84 km**: one disk was
+empty, the other held four riders. Two reasons:
+
+1. The disk is a **hexagonal region**. 2.37 km is the distance to its furthest corner;
+   towards a flat side it is less.
+2. The disk is centred on the restaurant's **cell**, not the restaurant, so it is offset
+   by up to ~0.53 km depending on where in the cell the restaurant falls.
+
+Corrected in entry 2, `config.py`, PLAN.md and README.md.
+
+### What the first successful run then showed
+
+```
+90 orders, all delivered. 522 ticks, 87 simulated minutes, 9.96 s of real time.
+
+delivery time     : median 21.3 min, worst 39.8 min
+wait for dispatch : median 6 s, worst 1221 s
+rider idle at shop: median 9.5 min
+orders that waited because nobody was near : 0
+orders that waited because all were busy   : 11
+orders that needed the widened fallback    : 1
+```
+
+Three findings worth carrying into Day 4:
+
+**Rider idle time at restaurants is ~9.5 minutes of a ~21 minute delivery.** Close to the
+pre-run estimate of 620 s. Roughly half of all rider time is spent standing at a
+restaurant waiting for food, which is a real consequence of assigning immediately - and
+the reason production systems *delay* assignment so the rider arrives as the food does.
+
+**Local saturation exists at 56% global load.** One order waited 1221 s for a rider while
+riders elsewhere were idle. Global utilisation says nothing about whether the right
+riders are in the right place, which is precisely what batched matching on Day 5 should
+improve.
+
+**Entry 17's prediction was confirmed by the data.** That entry noted the exact objective
+`max(travel, prep_remaining)` would only differ from plain travel time for *"an order
+that has already waited 720+ seconds unassigned"*. Order `o0073` is exactly that case:
+assigned at 4050 s with `prep_done` at 3549 s, so the food had been ready for 771 s and
+`picked_up` equals `arrived_at_restaurant`. For that one order, travel time really was
+the binding constraint.
+
+**Revisit when:** the widened search becomes common rather than rare - that would mean
+the fleet distribution, not the search radius, is the real problem. Also worth revisiting
+whether the fallback should widen on *saturation* as well as emptiness, which is what
+that 1221 s wait argues for.

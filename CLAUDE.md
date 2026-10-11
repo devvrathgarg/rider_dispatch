@@ -118,6 +118,9 @@ Decided once, applied everywhere. Violating these silently is a bug.
   defaults to 6379 is pointing at the wrong database. See DECISIONS.md entry 10.
 - **The dispatch service is on port 8001**, not the usual 8000. Port 8000 is
   serving a different project (`CivilSpace Audit API`). See DECISIONS.md entry 19.
+- **A k-ring is not a radius.** `k=2` is a hexagonal region ~1.8-2.4 km across,
+  centred on the restaurant's *cell* rather than the restaurant. Two riders at the
+  same 1.84 km were measured one inside the disk and one outside. See entry 20.
 - **Verify you reached THIS service, not just any service.** Both port collisions
   above produced a working connection to the wrong program. Check identity -
   `/openapi.json` should report the title `Rider dispatch`, and a fresh Redis
@@ -136,6 +139,7 @@ python dispatch.py            # self-check for the service (needs a seeded fleet
 
 uvicorn dispatch:app --host 127.0.0.1 --port 8001    # run the service
 #   then http://127.0.0.1:8001/docs to send a request by hand
+python sim.py                 # a full run; needs Redis AND the service up
 
 docker start dispatch-redis   # Redis on host port 6380
 docker stop dispatch-redis
@@ -161,7 +165,7 @@ More will be added as components land.
 | [state.py](state.py) | Rider state read/write against Redis, and the cell index | done |
 | [seed.py](seed.py) | Create the initial fleet, and report what the index looks like | done |
 | [dispatch.py](dispatch.py) | FastAPI service, and the cost function | done |
-| `sim.py` | Clock, orders, movement, CSV | not started |
+| [sim.py](sim.py) | Clock, orders, movement, CSV | done |
 
 ---
 

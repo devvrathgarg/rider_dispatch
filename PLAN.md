@@ -262,8 +262,8 @@ blocks. The tradeoff:
 - **Coarser** (res 7, 6): fewer cells to query and less churn — but each cell returns
   more riders who turn out to be too far, so the ranking step does more wasted work.
 
-Resolution 8 at `k=2` gives 19 cells reaching about 2.4 km, which is a sensible
-delivery radius. Both numbers are tunable and worth measuring rather than trusting.
+Resolution 8 at `k=2` gives 19 cells covering a hexagonal region roughly 1.8-2.4 km
+across - not a circle, and offset by where the restaurant falls inside its own cell. Both numbers are tunable and worth measuring rather than trusting.
 
 ## Why a virtual clock instead of real time
 

@@ -75,6 +75,8 @@ def describe_fleet(rider_ids: list[str]) -> dict:
 
 
 if __name__ == "__main__":
+    state.require_redis()
+
     rng = random.Random(config.RANDOM_SEED)
 
     cleared = state.clear_all()
