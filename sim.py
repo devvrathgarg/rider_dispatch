@@ -257,6 +257,9 @@ class Simulator:
                         "order_id": order.order_id,
                         "lat": order.restaurant[0],
                         "lng": order.restaurant[1],
+                        # How long this order has queued. The service is told a
+                        # duration rather than reading a clock.
+                        "waited_seconds": self.now - order.created,
                     }
                     for order in batch
                 ]

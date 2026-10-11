@@ -67,6 +67,12 @@ class OrderRequest(BaseModel):
     lat: float = Field(ge=-90, le=90)
     lng: float = Field(ge=-180, le=180)
 
+    # How long this order has already been waiting for a rider. Data, not a
+    # clock: the service never asks what time it is, it is told how long. That
+    # keeps the service clock-free (entry 12 context) while letting a policy
+    # prioritise orders that have been queuing.
+    waited_seconds: float = Field(ge=0, default=0.0)
+
 
 class AssignBatchRequest(BaseModel):
     """Several orders to decide together.
@@ -150,19 +156,32 @@ class Candidates:
         return (self.order.lat, self.order.lng)
 
 
-def cost_of(travel_seconds: float) -> float:
+def cost_of(travel_seconds: float, waited_seconds: float) -> float:
     """What dispatch ranks on. Lowest wins.
 
-    Plain travel time to the restaurant. The exact objective would be
-    max(travel, prep_remaining), since the food is not collectable until prep
-    finishes - but measured against this configuration it cannot rank
-    differently: the K=2 disk is 341 seconds of travel against a 720 second
-    prep, so every reachable rider arrives early and they all tie (entry 17).
+    Travel time to the restaurant, discounted by how long the order has already
+    waited. The discount exists because entry 26 measured pure travel cost
+    starving old orders: matching turned a 44 minute p90 into 62 on one seed by
+    spending dispatch promptness on travel savings that prep time absorbs.
 
-    Both policies use this, so the comparison changes the algorithm and nothing
-    else.
+    AGEING_WEIGHT is "seconds of travel we will spend to save a second of
+    waiting", set to 1.0 on principle rather than tuned.
+
+    Two invariances worth knowing, because both are provable rather than hoped:
+
+      * It cannot change GREEDY at all. The discount is identical for every
+        rider of a given order, so the cheapest rider for that order is the same
+        rider either way.
+
+      * It cannot change MATCHING when riders outnumber orders. Every order is
+        assigned regardless, and subtracting a constant from a whole row does
+        not change which assignment is optimal (Day 5 Part 2).
+
+    It bites only when riders are scarcer than orders, where the solver must
+    choose WHICH orders to serve and a discounted row is cheaper to include.
+    That is exactly the starvation case.
     """
-    return travel_seconds
+    return travel_seconds - config.AGEING_WEIGHT * waited_seconds
 
 
 def find_candidate_ids(restaurant_cell: str) -> tuple[list[str], int]:
@@ -215,7 +234,8 @@ def gather_candidates(order: OrderRequest) -> Candidates:
             gathered.restaurant, [rider.position for rider in free]
         )
         gathered.cost_by_rider = {
-            rider.rider_id: cost_of(second) for rider, second in zip(free, seconds)
+            rider.rider_id: cost_of(second, order.waited_seconds)
+            for rider, second in zip(free, seconds)
         }
 
     return gathered
@@ -393,6 +413,29 @@ if __name__ == "__main__":
 
         print("%-9s single order -> %s, two orders -> %s and %s"
               % (policy, first["rider_id"], riders[0], riders[1]))
+
+    # ---- the two ageing invariances, asserted rather than hoped ----
+    def riders_for(policy, waits):
+        config.POLICY = policy
+        body = post([
+            dict(order_id=name, waited_seconds=wait, **CENTRE)
+            for name, wait in zip("ab", waits)
+        ])
+        return [a["rider_id"] for a in body["assignments"]]
+
+    # 1. ageing cannot change greedy: the discount is identical for every rider
+    #    of a given order, so that order's cheapest rider is the same either way.
+    assert riders_for("greedy", (0, 0)) == riders_for("greedy", (0, 5000)), (
+        "ageing changed greedy, which is mathematically impossible"
+    )
+
+    # 2. nor matching, while riders outnumber orders: every order is assigned
+    #    regardless, and a row-constant shift cannot change the optimum.
+    assert riders_for("matching", (0, 0)) == riders_for("matching", (0, 5000)), (
+        "ageing changed matching despite riders outnumbering orders"
+    )
+    print("ageing changes neither policy here, exactly as the maths predicts")
+    print()
 
     # ---- matching must never be worse than greedy on the same batch ----
     # Several real restaurant positions spread around the city.

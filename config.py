@@ -116,6 +116,25 @@ PREP_SECONDS = 12 * 60
 # forgetting to restart is an error rather than a silently ruined benchmark.
 POLICY = "greedy"
 
+# How many seconds of travel we are willing to spend to avoid one second of
+# an order waiting unassigned. The matching cost is
+#     travel_seconds - AGEING_WEIGHT * waited_seconds
+#
+# 1.0 is chosen from first principles, NOT tuned against the benchmark: a
+# second of waiting adds a second to delivery for an order whose food is
+# already ready, while a second of travel adds roughly nothing for one still
+# cooking (entry 17). So waiting is worth at least as much as travel, and
+# 1.0 is the conservative floor. Tuning this against p90 would be fitting the
+# benchmark rather than modelling the problem.
+#
+# It has NO effect on greedy: the discount is identical for every rider of a
+# given order, so it cannot change which rider that order prefers. It also
+# has no effect on matching when riders outnumber orders, because then every
+# order is assigned anyway and a row-constant shift cannot change the optimum
+# (Day 5 Part 2). It bites only when riders are scarce and the solver must
+# choose WHICH orders to serve - which is the starvation case entry 26 found.
+AGEING_WEIGHT = 1.0
+
 # How many seeds the paired benchmark runs. Enough for a win/loss count to
 # carry weight against a per-seed p90 standard deviation of about 0.6 min
 # (entry 23). At roughly 11 s a run, 20 seeds is ~4 minutes per policy.
