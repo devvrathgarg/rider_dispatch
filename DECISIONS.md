@@ -1017,3 +1017,71 @@ may be small. If it is, the scenario is the first thing to check, not the algori
 
 **Revisit when:** a run produces enough orders for p99 to be meaningful, at which point
 it is worth asking whether the primary should move from p90 to p99.
+
+---
+
+## 22. `/assign` becomes `/assign_batch`, and the policy is an experiment value
+
+**Date:** 2026-10-11 - **Decided by:** Devvrath
+
+### Why the endpoint must change shape
+
+The simulator currently calls `/assign` once per pending order. Within a tick, what stops
+two orders being given the same rider is that the simulator writes
+`state = to_restaurant` to Redis after each assignment, so the next call no longer sees
+that rider as free.
+
+A batching policy decides several orders **in one step**, so it must avoid
+double-assigning a rider *inside its own decision*, before anything reaches Redis - and
+it cannot use Redis to track that, because the service never writes (entry 1). It has to
+hold its own set of commitments for the duration of the batch.
+
+So a one-order-at-a-time endpoint is not merely inconvenient for batching; it
+**structurally cannot** express it.
+
+**Options considered**
+
+| Option | Tradeoff |
+| --- | --- |
+| **Replace `/assign` with `/assign_batch`** (chosen) | One endpoint, one code path. The simulator always sends a batch, and greedy on a batch of one is exactly current behaviour. The refactor must reproduce the existing CSV byte-for-byte, which is a useful check in itself. |
+| Keep both | Nothing existing changes, so today's verification stays valid. But two code paths doing nearly the same thing will drift, and `/assign` would have no caller once the simulator switches - dead code kept for comfort. |
+| Keep `/assign`, batch inside the simulator | Least change to the service. Rejected because it moves the dispatch decision out of the dispatch service, so the service would no longer be the dispatcher - which is the architecture this project is demonstrating. |
+
+### Where the policy lives
+
+`config.POLICY`, alongside `K_RING` and `ORDERS_PER_HOUR`. By entry 14 it describes **the
+experiment**, so a change belongs in git and a result stays traceable to a commit. A
+request field was rejected because the policy would stop being a property of the
+experiment, and a CSV would not record which policy produced it. An environment variable
+was rejected for the same reason entry 14 gives: that is for machine settings.
+
+### What was verified before touching any of this
+
+Determinism, end to end, which had been claimed since Day 1 and never checked:
+
+```
+run 1 md5: e836ef7f03172af1f3d8511aeeeb7e19
+run 2 md5: e836ef7f03172af1f3d8511aeeeb7e19
+```
+
+Two **separate processes**, byte-identical CSV. The separate-process part is what makes
+this meaningful: Python's string hash seed differs per process, so this specifically
+validates the `sorted()` on candidate ids from entry 18. Without it, `SUNION` would
+iterate differently and ties would break differently between runs.
+
+### Two properties of comparability worth stating
+
+**The worlds diverge, and that is correct.** Once two policies make different choices,
+rider positions differ and every later decision faces a different state. That is the
+consequence being measured, not a flaw - which means policies are compared on **outcomes
+over a whole run**, never decision by decision. "Matching chose better on order 37" is
+unanswerable, because by order 37 the two systems inhabit different worlds.
+
+**The order stream is structurally immune to that divergence**, because it is generated
+in full before the clock starts and the tick loop uses no randomness at all. Had orders
+been drawn lazily inside the loop, two policies consuming different numbers of random
+draws would silently receive **different order streams** - comparing chefs who were given
+different ingredients, with nothing visible to reveal it.
+
+**Revisit when:** a third policy arrives that needs state carried between batches, which
+would make the service stateful and break entry 1's read-only guarantee.
