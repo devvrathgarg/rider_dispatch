@@ -1513,3 +1513,77 @@ visible because the metric set had guardrails and the comparison was paired.
 **Revisit when:** prep time drops, the city grows so travel stops being absorbed, or
 delayed assignment is implemented - any of which would make the first leg matter enough
 for matching to have something to win.
+
+---
+
+## 28. The ageing weight is a harm dial, not a performance one. The null is *located*.
+
+**Date:** 2026-10-11 - **Supersedes entry 27's choice of W = 1.0, which was a mistake.**
+
+### Why W = 1.0 was wrong
+
+Not a tuning preference - a magnitude error. Waits reach 4669 s while candidate travel
+spans 56-324 s, so at W = 1.0 the ageing term was roughly **20 times** the quantity it
+was meant to balance against. It swamped travel entirely and matching degenerated into
+FIFO, which *is* greedy. That is why 17 of 20 seeds tied exactly: entry 27 was measuring
+greedy against a disguised copy of itself.
+
+### The whole curve, 20 paired seeds
+
+```
+p90 delivery (min)              max dispatch wait (s)        p90 dispatch wait (s)
+   W  better worse tied  worst    better worse tied   worst   better worse tied
+0.00       1     7   12  +17.86        1    10    9 +2562.6        9     3    8
+0.05       2     7   11   +7.25        1    10    9 +1065.1        8     4    8
+0.10       2     7   11   +3.97        2     9    9  +585.9        8     4    8
+0.20       3     5   12   +1.57        3     8    9  +585.9        9     3    8
+0.35       2     6   12   +0.70        2     7   11  +493.7        7     2   11
+0.50       2     4   14   +0.22        1     7   12  +265.9        6     1   13
+```
+
+**No weight makes matching beat greedy on the primary metric.** The median p90 delta is
+`+0.00` at *every* weight. Reporting the curve rather than its best cell is what makes
+that visible - a tuned answer would have quoted W = 0.20 at "3 better, 5 worse", which is
+still not a win.
+
+**W is a harm dial.** Raising it monotonically cuts the worst p90 regression from
+**+17.86 to +0.22 min** and the worst dispatch-wait regression from **+2563 to +266 s**.
+It buys safety, not performance.
+
+### The row that completes the causal chain
+
+`p90 dispatch wait` improves at **every** weight: 9 better / 3 worse at W = 0, still
+6 better / 1 worse at W = 0.5.
+
+| Question | Measured answer |
+| --- | --- |
+| Does matching improve the thing it controls? | **Yes** - p90 dispatch wait, consistently, at every W |
+| Does that reach the customer? | **No** - p90 delivery median +0.00 |
+| Why not? | Prep absorbs it (entry 17) |
+
+**This is not a null result; it is a *located* null.** The benefit exists and is measured.
+The point where it disappears is identified. Matching does its job and the system swallows
+the gain before a customer can experience it.
+
+That is a far stronger position than either "no difference" or a tuned win, because the
+mechanism is pinned down rather than guessed - and it makes the prep sweep a direct test
+of the final link rather than a search for a flattering configuration.
+
+### The weight actually chosen, and how
+
+**W = 0.2**, on a magnitude argument rather than its scoreboard:
+
+```
+candidate travel spread (measured) : 268 s
+a typical congested wait           : 1000 s
+W making the two comparable        : 0.27
+```
+
+The swept grid brackets 0.27 with 0.20 and 0.35; 0.20 is taken because it preserves more
+travel sensitivity. **Not** chosen because it had the best record - that distinction is
+the difference between a sensitivity analysis and fitting the benchmark, and "how did you
+pick that weight?" is a question with only one good answer.
+
+**Revisit when:** the prep sweep lands. If lowering prep makes the dispatch-wait
+improvement appear in delivery time, the chain above is confirmed end to end. If it does
+not, entries 26 and 27 are wrong and need reopening rather than another parameter.

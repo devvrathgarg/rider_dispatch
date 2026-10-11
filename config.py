@@ -120,12 +120,19 @@ POLICY = "greedy"
 # an order waiting unassigned. The matching cost is
 #     travel_seconds - AGEING_WEIGHT * waited_seconds
 #
-# 1.0 is chosen from first principles, NOT tuned against the benchmark: a
-# second of waiting adds a second to delivery for an order whose food is
-# already ready, while a second of travel adds roughly nothing for one still
-# cooking (entry 17). So waiting is worth at least as much as travel, and
-# 1.0 is the conservative floor. Tuning this against p90 would be fitting the
-# benchmark rather than modelling the problem.
+# 0.2, chosen on a MAGNITUDE argument rather than on which value scored best
+# (entry 28). The candidate travel spread is ~268 s and a typical congested
+# wait is ~1000 s, so W around 268/1000 = 0.27 makes the two terms
+# comparable. The swept grid brackets that with 0.20 and 0.35; 0.20 is taken
+# because it preserves more travel sensitivity.
+#
+# The first attempt was 1.0, which was a mistake: waits reach 4669 s against
+# travel of 56-324 s, so the ageing term was ~20x the quantity it was meant
+# to balance and matching degenerated into FIFO - which is greedy.
+#
+# NOTE that no value of W makes matching beat greedy on p90 delivery; the
+# median is +0.00 at every weight swept. W is a harm dial, not a performance
+# one: raising it cut the worst regression from +17.9 min to +0.2 min.
 #
 # It has NO effect on greedy: the discount is identical for every rider of a
 # given order, so it cannot change which rider that order prefers. It also
@@ -133,7 +140,7 @@ POLICY = "greedy"
 # order is assigned anyway and a row-constant shift cannot change the optimum
 # (Day 5 Part 2). It bites only when riders are scarce and the solver must
 # choose WHICH orders to serve - which is the starvation case entry 26 found.
-AGEING_WEIGHT = 1.0
+AGEING_WEIGHT = 0.2
 
 # How many seeds the paired benchmark runs. Enough for a win/loss count to
 # carry weight against a per-seed p90 standard deviation of about 0.6 min
