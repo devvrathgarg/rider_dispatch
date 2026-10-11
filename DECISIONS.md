@@ -1336,3 +1336,97 @@ whole project is built to report, and correctness matters more than footprint.
 
 **Revisit when:** `max dispatch wait` degrades enough to need ageing, which would be the
 first evidence-backed reason to add it.
+
+---
+
+## 26. Matching lost. The optimiser was right and the objective was wrong.
+
+**Date:** 2026-10-11 - **The headline result of the project.**
+
+### The measurement
+
+Paired, 20 seeds, greedy versus pure min-cost matching, nothing else changed:
+
+```
+  seed  orders   greedy  matching  delta    max dispatch wait: greedy -> matching
+    52     135     37.2      36.2   -0.9      2622 -> 3546   (+923)
+    60     141     27.1      27.3   +0.2       984 -> 1981   (+997)
+    61     131     44.2      62.1  +17.9      4669 -> 7232  (+2563)
+
+  PRIMARY p90 delivery (min)     improved  1 / lost  7 / tied 12   median +0.00  worst +17.86
+          p50 delivery (min)     improved  5 / lost  3 / tied 12   median +0.00  worst  +0.11
+          max dispatch wait (s)  improved  1 / lost 10 / tied  9   median +25.5  worst +2563
+          p90 dispatch wait (s)  improved  9 / lost  3 / tied  8   median +0.00  worst  +772
+          p50 idle at shop (min) improved  0 / lost  5 / tied 15   median +0.00  worst  +0.33
+```
+
+**Matching improved the primary metric on 1 of 20 seeds and degraded it on 7.** On the
+worst seed it turned a 44 minute p90 into 62 minutes.
+
+### It is not a bug
+
+The self-check proves matching finds the **exhaustive brute-force optimum** on every test
+batch, and that it never assigns fewer orders than greedy. It is minimising total travel
+time, correctly and provably.
+
+**Total travel time is simply the wrong thing to minimise here.** Three earlier findings
+collide:
+
+| Finding | Consequence |
+| --- | --- |
+| Entry 17: prep time absorbs most travel | Saving 200 s of travel often changes delivery time by **zero** |
+| Entry 25: pure min-cost has no fairness | With 25 orders and 3 riders it takes the three cheapest pairings, which may be three orders that just arrived |
+| Entry 23: ~21 of 26 delivery minutes are policy-independent | The savings available are tiny; the delays incurred are not |
+
+So matching spends something valuable - dispatch promptness for the oldest order - to buy
+something worthless: travel seconds the customer never experiences. It trades a forty
+minute wait for a shorter ride.
+
+**The sentence:** *the optimiser was correct and my objective was wrong. I minimised total
+travel time while my metric was the tail of delivery time, and because prep absorbs most
+travel, cutting travel buys nothing while the reordering it requires pushes old orders
+further back.*
+
+### What it is actually doing: redistributing, not wasting
+
+| | improved | lost |
+| --- | --- | --- |
+| **p90** dispatch wait | **9** | 3 |
+| **max** dispatch wait | 1 | **10** |
+
+Matching improves the *typical* queued order and savages the *worst* one. It takes time
+off the middle and dumps it on the tail.
+
+This is exactly the failure mode written down as a hypothetical warning on Day 4
+("an optimisation can lower the mean and raise p99 at the same time") - now observed.
+That warning is the only reason the guardrails existed to catch it: the primary metric
+moved by a median of **+0.00**, which alone would have read as "no significant
+difference". The guardrail moved by **+2563 s** on one seed, which is impossible to miss.
+
+### The reversal worth keeping
+
+Part 1 of Day 5 showed FIFO was the *cause* of greedy's inefficiency: serving the oldest
+order best is what made the newer one worse.
+
+But FIFO is also implicitly **fair**, and fairness is what protects a tail metric.
+Greedy's apparent flaw is load-bearing.
+
+> Greedy is not good because it is clever. It is good because it is fair, and the chosen
+> metric rewards fairness.
+
+### The fix this points to, and why it is not a new idea
+
+Entry 17 dismissed `max(travel, prep_remaining)` because, for a **single** order, it
+cannot rank riders - every reachable rider arrives before prep finishes, so they all tie.
+That was correct.
+
+But in a **batch** it does not need to rank riders; it needs to rank *orders*. An order
+already past its prep time has cost `now + travel`, which a nearer rider reduces. An
+order not yet past prep has cost `prep_done`, which no rider choice can change. So the
+solver would put the good rider where it actually reduces the sum - on the urgent order -
+which is the behaviour pure travel time fails to produce.
+
+**The same formula, rejected at the per-order level, is the right one at the batch
+level.** Whether to implement it is decision 27.
+
+**Revisit when:** never - this entry records a measured result rather than a choice.
