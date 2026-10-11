@@ -33,6 +33,33 @@ Each one describes a real kind of food business:
 A real delivery platform serves all three at once. The question is which regime
 batched matching is worth deploying for.
 
+Why these absolute numbers are defensible
+-----------------------------------------
+Travel here is only 1-5 minutes, which sounds unrealistically small. It is
+small, and it does not matter, because what governs the result is travel
+RELATIVE to prep - prep is what absorbs travel savings, so the ratio is the
+governing quantity and the absolute minutes are not.
+
+    this simulator      real city (5 km dispatch radius, ~20 km/h)
+    7 km city, K=2       candidate travel 180-900 s, mean 540 s
+    travel mean 230 s
+      prep 720 -> 0.32     prep 900 (full-service, 15 min) -> 0.60
+      prep 300 -> 0.77     prep 600 (10 min)               -> 0.90
+      prep 120 -> 1.92     prep 300 (quick counter, 5 min) -> 1.80
+
+The swept range brackets the real one. This is a scale model matched on a
+dimensionless ratio, the same reason a wind tunnel tests a small wing at the
+right Reynolds number rather than a full-size one.
+
+What the ratio does NOT capture, stated because it cuts against the null result
+-------------------------------------------------------------------------------
+Candidate COUNT is a second governing quantity: more riders to choose among
+means more for matching to optimise. A k=2 disk here holds about 19 candidates,
+where a 5 km radius in a dense city would hold hundreds. So this setup probably
+UNDERSTATES matching's benefit, and the null result at prep=720 may be partly an
+artefact of a thin candidate pool rather than purely prep absorption. Sweeping
+K_RING at fixed prep is the experiment that would separate the two.
+
 The confound, and the compensation
 ----------------------------------
 Lowering prep shortens how long a rider is occupied per order, which raises
