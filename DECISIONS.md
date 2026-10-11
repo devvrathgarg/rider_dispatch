@@ -1587,3 +1587,57 @@ pick that weight?" is a question with only one good answer.
 **Revisit when:** the prep sweep lands. If lowering prep makes the dispatch-wait
 improvement appear in delivery time, the chain above is confirmed end to end. If it does
 not, entries 26 and 27 are wrong and need reopening rather than another parameter.
+
+---
+
+## 29. PRE-REGISTRATION: the confirmatory prep test
+
+**Date:** 2026-10-11 - **Written and committed BEFORE the run.** The commit order in git
+is the evidence that the test statistic was fixed before the data existed.
+
+### Why this entry exists
+
+An 8-seed pilot sweep was run with its test written into the script in advance. The test
+was *"the **median** paired p90 delta becomes monotonically more negative as prep falls"*,
+and it **failed**:
+
+```
+prep 720 -> +0.00    prep 300 -> +0.00    prep 120 -> +0.01   -> NOT monotonic
+```
+
+But the median was a bad statistic and that is a genuine methodological error. With 8
+seeds and 2-5 of them tying exactly, the median **cannot move** however large the real
+effect is. The same pilot's other columns did trend as predicted:
+
+```
+p90 delivery  mean: +0.23 -> +0.04 -> -0.10     win/loss: 1-3 -> 3-3 -> 4-4
+p50 delivery  mean: +0.02 -> -0.15 -> -0.23     win/loss: 1-2 -> 4-2 -> 5-0
+```
+
+**Reading those after the declared test failed would be outcome switching** - choosing
+the statistic that agrees with the hypothesis once the data is visible. So the pilot is
+treated as a pilot: it informs the design and is reported, but it decides nothing.
+
+### The confirmatory design, fixed now
+
+| | |
+| --- | --- |
+| **Hypothesis** | Matching's measured improvement to dispatch wait fails to reach delivery time because prep absorbs first-leg travel (entries 17, 26, 28). If so, reducing prep should make matching's p90 delivery improve relative to greedy. |
+| **Seeds** | **62-81. Fresh - never used in any prior run in this project**, so this is a genuine holdout rather than a re-reading of the pilot's seeds. |
+| **Conditions** | `PREP_SECONDS` 720 (travel/prep 0.32) and 120 (travel/prep 1.92). Load held at 60% by setting `ORDERS_PER_HOUR` to 120 and 217 respectively, so prep is the only thing varying. |
+| **Weight** | `AGEING_WEIGHT = 0.2`, fixed by entry 28's magnitude argument. Not revisited. |
+| **Policies** | greedy and matching, paired on each seed. |
+| **PRIMARY TEST STATISTIC** | The **mean** paired delta of `p90_delivery_min` (matching minus greedy). The mean, not the median, because the median cannot move under ties - which is the error being corrected. |
+| **DECISION RULE** | Supported if **both**: the mean delta at prep=120 is at least **0.10 min more negative** than at prep=720, **and** matching wins more seeds than it loses at prep=120. Otherwise not supported. |
+| **Threshold justification** | The pilot showed a shift of 0.33 min. 0.10 is under a third of that - conservative enough not to be passed trivially, achievable if the pilot effect is real. Declared here because a threshold informed by a pilot is only legitimate when stated. |
+| **Secondary, reported but not decisive** | p50 delivery, max dispatch wait, p90 dispatch wait. |
+
+### What a failure would mean
+
+If the test is not supported, entries 26-28's explanation does not survive its own test.
+The correct response is to **reopen the explanation**, not to try another statistic,
+another weight, or another scenario. Matching's dispatch-wait gain would then be failing
+to reach delivery time for some reason other than prep absorption, and that reason would
+be unknown.
+
+**This entry is deliberately written so it cannot be quietly rewritten afterwards.**

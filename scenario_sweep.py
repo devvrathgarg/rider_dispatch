@@ -1,7 +1,8 @@
 """Does matching pay off when prep time stops absorbing travel?
 
-    python scenario_sweep.py          8 seeds
-    python scenario_sweep.py 12       more seeds, slower
+    python scenario_sweep.py                    8 seeds from RANDOM_SEED
+    python scenario_sweep.py 20 62              20 seeds starting at 62
+    python scenario_sweep.py 20 62 720,120      ...and only these prep values
 
 Entries 17, 23, 26 and 27 together say matching cannot win in the default
 configuration for one specific reason: a 12-minute prep absorbs first-leg
@@ -121,21 +122,23 @@ def run_one(client, seed: int, policy: str) -> metrics.RunMetrics:
     )
 
 
-def main(seed_count: int) -> None:
+def main(seed_count: int, start_seed: int, preps: tuple[int, ...]) -> None:
     state.require_redis()
     import dispatch  # noqa: F401  - imported for its app
 
     original = (config.POLICY, config.PREP_SECONDS, config.ORDERS_PER_HOUR)
     client = TestClient(dispatch.app)
-    seeds = list(range(config.RANDOM_SEED, config.RANDOM_SEED + seed_count))
+    seeds = list(range(start_seed, start_seed + seed_count))
 
     print("second leg averages %.0f s at a %.0f km city and %.0f km/h"
           % (SECOND_LEG_SECONDS, config.CITY_SIZE_KM, config.RIDER_SPEED_KMH))
     print("ageing weight %.2f, load held at %.0f%%, %d seeds"
           % (config.AGEING_WEIGHT, 100 * TARGET_LOAD, seed_count))
     print()
+    print("seeds %d-%d" % (seeds[0], seeds[-1]))
+    print()
     print("  prep   orders/hr   travel/prep   the kind of restaurant")
-    for prep in PREP_VALUES:
+    for prep in preps:
         note = {
             720: "full-service kitchen  (travel absorbed)",
             300: "quick-service counter (comparable)",
@@ -148,7 +151,7 @@ def main(seed_count: int) -> None:
     results = []
     started = time.perf_counter()
     try:
-        for prep in PREP_VALUES:
+        for prep in preps:
             config.PREP_SECONDS = prep
             config.ORDERS_PER_HOUR = rate_for(prep)
 
@@ -165,7 +168,7 @@ def main(seed_count: int) -> None:
         config.POLICY, config.PREP_SECONDS, config.ORDERS_PER_HOUR = original
 
     print()
-    print("%d runs in %.0f s" % (2 * seed_count * len(PREP_VALUES),
+    print("%d runs in %.0f s" % (2 * seed_count * len(preps),
                                  time.perf_counter() - started))
     print()
 
@@ -183,26 +186,45 @@ def main(seed_count: int) -> None:
                      statistics.mean(deltas)))
         print()
 
+    # The pre-registered statistic is the MEAN paired delta, not the median.
+    # With heavy ties the median cannot move however large the effect is, which
+    # is what made the 8-seed pilot's test uninformative (entry 29).
     primary = [
-        (prep, statistics.median(
-            metrics.paired_deltas(b, c, "p90_delivery_min")))
+        (prep,
+         statistics.mean(metrics.paired_deltas(b, c, "p90_delivery_min")),
+         sum(1 for d in metrics.paired_deltas(b, c, "p90_delivery_min") if d < 0),
+         sum(1 for d in metrics.paired_deltas(b, c, "p90_delivery_min") if d > 0))
         for prep, b, c in results
     ]
     print("THE TEST")
-    print("  If prep absorbing travel is why matching could not win, the median")
-    print("  p90 delta should move toward negative as prep falls - and the")
-    print("  crossover should sit where travel/prep passes 1:")
-    for prep, median in primary:
-        print("    prep %4d s -> %+.2f min" % (prep, median))
-    improving = all(
-        primary[i][1] >= primary[i + 1][1] for i in range(len(primary) - 1)
-    )
+    print("  Pre-registered (entry 29): the mean paired p90 delta must become")
+    print("  at least 0.10 min MORE NEGATIVE at the lowest prep than at the")
+    print("  highest, AND matching must win more seeds than it loses there.")
     print()
-    print("  monotonic in the predicted direction: %s" % ("YES" if improving else "NO"))
-    if not improving:
-        print("  The explanation in entries 26 and 27 does not survive this test")
-        print("  and needs reopening rather than patching.")
+    print("    prep   mean p90 delta   better   worse")
+    for prep, mean, better, worse in primary:
+        print("    %4d s     %+9.2f min   %6d  %6d" % (prep, mean, better, worse))
+
+    shift = primary[0][1] - primary[-1][1]
+    lowest = primary[-1]
+    passed = shift >= 0.10 and lowest[2] > lowest[3]
+    print()
+    print("  shift from highest to lowest prep : %+.2f min (need >= 0.10)" % shift)
+    print("  win/loss at the lowest prep       : %d / %d (need better > worse)"
+          % (lowest[2], lowest[3]))
+    print()
+    print("  PRE-REGISTERED TEST: %s" % ("SUPPORTED" if passed else "NOT SUPPORTED"))
+    if not passed:
+        print("  The explanation in entries 26-28 does not survive its own test.")
+        print("  Reopen it rather than reach for another statistic.")
 
 
 if __name__ == "__main__":
-    main(int(sys.argv[1]) if len(sys.argv) > 1 else 8)
+    count = int(sys.argv[1]) if len(sys.argv) > 1 else 8
+    start = int(sys.argv[2]) if len(sys.argv) > 2 else config.RANDOM_SEED
+    chosen = (
+        tuple(int(v) for v in sys.argv[3].split(","))
+        if len(sys.argv) > 3
+        else PREP_VALUES
+    )
+    main(count, start, chosen)
