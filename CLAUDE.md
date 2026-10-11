@@ -181,7 +181,7 @@ More will be added as components land.
 Python 3.12.10. Docker 29.5.3.
 
 Installed: `fastapi` 0.139.0, `uvicorn` 0.51.0, `httpx` 0.28.1, `pydantic` 2.13.4,
-`redis` 8.1.0, `h3` 4.5.0.
+`redis` 8.1.0, `h3` 4.5.0, `scipy` 1.18.0 (with `numpy` 2.4.6).
 
 Redis runs as the `dispatch-redis` container (`redis:7-alpine`) on **host port 6380**.
 

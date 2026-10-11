@@ -1260,3 +1260,79 @@ improve: the problem is not having too few riders, it is committing the wrong on
 **Revisit when:** the delta distribution from Day 5 is known. If it is as bimodal as
 predicted above, reporting should lead with the per-seed table and the win/loss count
 rather than a median.
+
+---
+
+## 25. Matching uses scipy, pure min-cost, with no batching window and no candidate cap
+
+**Date:** 2026-10-11 - **Decided by:** Devvrath, after measuring batch sizes
+
+### Two planned decisions, closed by measurement rather than argument
+
+Before deciding anything, batch sizes were measured - because a batch of one order gives
+matching and greedy **identical** answers, and if batches were always size 1 the whole
+day would have had no measurable effect.
+
+```
+  seed  orders   batches   size 1   size 2+   biggest
+    42      90       280      133      147          5
+    47     126       134       90       44          3
+    52     135       500       21      479         19
+    60     141       293       40      253          8
+    61     131       780       31      749         25
+```
+
+**No batching window.** A 30-60 s window was going to be offered, to force batches to
+form. It is unnecessary: real multi-order batches already exist, even on the quiet seed
+(147 of 280). Skipping it is also better science - a window would change *two* things at
+once, the algorithm and an added delay, leaving any difference unattributable. One change
+at a time.
+
+Batches are large because an unassigned order stays pending and retries every tick, so
+the queue accumulates during congestion. On seed 61 some orders waited 467 ticks; others
+inevitably piled up behind them.
+
+**No candidate cap.** The cost matrix is at most *orders x candidates*, and candidates
+cannot exceed the fleet, so it is bounded by 25 x 75. Hungarian is O(n^3): 75^3 is
+~422,000 operations, under a millisecond. A cap matters when the candidate pool is
+thousands; ours is capped at 75 by the fleet existing (rule 12b).
+
+### The decision the measurement revealed
+
+On seed 61, matching may face 25 pending orders and three free riders. It will pick the
+three cheapest pairings - which could be three orders that **just arrived**, leaving an
+order that has waited forty minutes still waiting.
+
+**Pure min-cost matching has no concept of fairness.** It would starve the oldest order
+indefinitely to save a few hundred metres. This is the Part 1 tension pointing the other
+way: greedy is FIFO and inefficient; pure matching is efficient and unfair.
+
+| Option | Tradeoff |
+| --- | --- |
+| **Pure min-cost, let the guardrail reveal the cost** (chosen) | Travel time is the only cost, same function greedy uses, so the comparison changes exactly one thing. If `max dispatch wait` worsens, that is a measured finding - and entry 21 added that guardrail for precisely this. Ageing can then be a third policy with evidence behind it. |
+| Ageing discount on the cost | The standard industry fix and it would likely hold the guardrail. But it changes the algorithm *and* the cost function at once, and introduces an invented weight. |
+| Match only among the oldest N | Bounds the unfairness with no new weight, but discards most of the batch on exactly the congested seeds where matching has most to offer. |
+
+### The library
+
+**`scipy.optimize.linear_sum_assignment`** (scipy 1.18.0, pulling numpy 2.4.6).
+
+**What it does:** exact minimum-cost assignment over a rectangular matrix, using
+Jonker-Volgenant - a faster variant of Hungarian - in compiled C.
+
+| Alternative | Why not |
+| --- | --- |
+| Hand-roll Hungarian | No dependency, and more educational. But the risk is asymmetric: the covering-lines step is fiddly, and a subtly wrong implementation does not crash - it returns a plausible, suboptimal assignment. The benchmark would then measure the bug against greedy rather than the algorithm, silently invalidating the project's headline result. |
+| Hand-roll, verified against brute force up to 7x7 | The honest middle: keeps the learning and removes most of the risk. Rejected on time. |
+
+**Verified on the Part 1 matrix before being trusted:** `linear_sum_assignment` returned
+A<-rider2, B<-rider1 at 1.20 km, matching the brute-force answer exactly. Rectangular
+input was confirmed too - 2 orders against 5 riders assigned both orders and left three
+riders unused.
+
+**The cost of the dependency, stated honestly:** scipy plus numpy is a large install for
+one function. It is justified here because that one function produces the number the
+whole project is built to report, and correctness matters more than footprint.
+
+**Revisit when:** `max dispatch wait` degrades enough to need ageing, which would be the
+first evidence-backed reason to add it.
